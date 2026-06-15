@@ -26,7 +26,7 @@ export async function savePlayer(
     id: formData.get("id") || undefined,
     name: formData.get("name"),
     rating: formData.get("rating"),
-    isActive: formData.get("isActive") !== "false",
+    isActive: formData.getAll("isActive").includes("true"),
   });
   if (!parsed.success) {
     return { ok: false, message: parsed.error.issues[0].message };
@@ -46,6 +46,42 @@ export async function savePlayer(
   revalidatePath("/players");
   revalidatePath("/");
   return { ok: true, message: "Player saved." };
+}
+
+export async function deletePlayer(
+  _previous: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const parsed = playerSchema.shape.id.unwrap().safeParse(formData.get("id"));
+  if (!parsed.success) {
+    return { ok: false, message: "Choose a valid player to delete." };
+  }
+
+  const client = createServerClient();
+  if (!client) return unavailable;
+
+  const { count, error: referenceError } = await client
+    .from("event_players")
+    .select("id", { count: "exact", head: true })
+    .eq("player_id", parsed.data);
+  if (referenceError) {
+    return { ok: false, message: referenceError.message };
+  }
+  if (count) {
+    return {
+      ok: false,
+      message:
+        "This player belongs to an event and cannot be deleted. Mark them inactive instead.",
+    };
+  }
+
+  const { error } = await client.from("players").delete().eq("id", parsed.data);
+  if (error) return { ok: false, message: error.message };
+
+  revalidatePath("/players");
+  revalidatePath("/");
+  revalidatePath("/events/new");
+  return { ok: true, message: "Player deleted." };
 }
 
 export async function createEvent(formData: FormData) {
