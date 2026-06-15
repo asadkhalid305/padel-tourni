@@ -7,6 +7,9 @@ export type Json =
   | Json[];
 
 export type Database = {
+  __InternalSupabase: {
+    PostgrestVersion: "14.5";
+  };
   public: {
     Tables: {
       players: {
@@ -27,9 +30,11 @@ export type Database = {
           updated_at?: string;
         };
         Update: {
+          id?: string;
           name?: string;
           rating?: number;
           is_active?: boolean;
+          created_at?: string;
           updated_at?: string;
         };
         Relationships: [];
@@ -83,8 +88,31 @@ export type Database = {
           display_order: number;
           created_at?: string;
         };
-        Update: never;
-        Relationships: [];
+        Update: {
+          id?: string;
+          event_id?: string;
+          player_id?: string;
+          name_snapshot?: string;
+          rating_snapshot?: number;
+          display_order?: number;
+          created_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "event_players_event_id_fkey";
+            columns: ["event_id"];
+            isOneToOne: false;
+            referencedRelation: "events";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "event_players_player_id_fkey";
+            columns: ["player_id"];
+            isOneToOne: false;
+            referencedRelation: "players";
+            referencedColumns: ["id"];
+          },
+        ];
       };
       event_rounds: {
         Row: {
@@ -108,7 +136,15 @@ export type Database = {
         Update: Partial<
           Database["public"]["Tables"]["event_rounds"]["Insert"]
         >;
-        Relationships: [];
+        Relationships: [
+          {
+            foreignKeyName: "event_rounds_event_id_fkey";
+            columns: ["event_id"];
+            isOneToOne: false;
+            referencedRelation: "events";
+            referencedColumns: ["id"];
+          },
+        ];
       };
       matches: {
         Row: {
@@ -152,7 +188,50 @@ export type Database = {
           updated_at?: string;
         };
         Update: Partial<Database["public"]["Tables"]["matches"]["Insert"]>;
-        Relationships: [];
+        Relationships: [
+          {
+            foreignKeyName: "matches_event_id_fkey";
+            columns: ["event_id"];
+            isOneToOne: false;
+            referencedRelation: "events";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "matches_event_id_round_id_fkey";
+            columns: ["event_id", "round_id"];
+            isOneToOne: false;
+            referencedRelation: "event_rounds";
+            referencedColumns: ["event_id", "id"];
+          },
+          {
+            foreignKeyName: "matches_event_id_team_one_player_one_id_fkey";
+            columns: ["event_id", "team_one_player_one_id"];
+            isOneToOne: false;
+            referencedRelation: "event_players";
+            referencedColumns: ["event_id", "id"];
+          },
+          {
+            foreignKeyName: "matches_event_id_team_one_player_two_id_fkey";
+            columns: ["event_id", "team_one_player_two_id"];
+            isOneToOne: false;
+            referencedRelation: "event_players";
+            referencedColumns: ["event_id", "id"];
+          },
+          {
+            foreignKeyName: "matches_event_id_team_two_player_one_id_fkey";
+            columns: ["event_id", "team_two_player_one_id"];
+            isOneToOne: false;
+            referencedRelation: "event_players";
+            referencedColumns: ["event_id", "id"];
+          },
+          {
+            foreignKeyName: "matches_event_id_team_two_player_two_id_fkey";
+            columns: ["event_id", "team_two_player_two_id"];
+            isOneToOne: false;
+            referencedRelation: "event_players";
+            referencedColumns: ["event_id", "id"];
+          },
+        ];
       };
     };
     Views: Record<string, never>;
