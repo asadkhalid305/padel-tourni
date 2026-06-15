@@ -1,0 +1,31 @@
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+
+# Next.js
+/.next
+/out
+
+# production
+/build
+
+# local environment
+.env
+.env.local
+.env.*.local
+
+# testing and tooling
+/coverage
+/.turbo
+/.vercel
+*.tsbuildinfo
+next-env.d.ts
+
+# local Supabase
+/supabase/.branches
+/supabase/.temp
+
+# OS and editors
+.DS_Store
+*.swp

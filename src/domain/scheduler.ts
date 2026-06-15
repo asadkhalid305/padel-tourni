@@ -1,0 +1,273 @@
+import { stableNoise } from "@/domain/random";
+import type {
+  PlayerSeed,
+  Schedule,
+  ScheduledMatch,
+  ScheduledRound,
+} from "@/domain/types";
+
+type PairCounts = Map<string, number>;
+
+type Candidate = {
+  players: [PlayerSeed, PlayerSeed, PlayerSeed, PlayerSeed];
+  teamOne: [PlayerSeed, PlayerSeed];
+  teamTwo: [PlayerSeed, PlayerSeed];
+  score: number;
+  tieBreaker: number;
+};
+
+function pairKey(first: string, second: string) {
+  return [first, second].sort().join(":");
+}
+
+function incrementPair(map: PairCounts, first: string, second: string) {
+  const key = pairKey(first, second);
+  map.set(key, (map.get(key) ?? 0) + 1);
+}
+
+function combinations<T>(items: T[], size: number, limit = 6000) {
+  const result: T[][] = [];
+
+  function visit(start: number, current: T[]) {
+    if (result.length >= limit) return;
+    if (current.length === size) {
+      result.push([...current]);
+      return;
+    }
+
+    for (let index = start; index < items.length; index += 1) {
+      current.push(items[index]);
+      visit(index + 1, current);
+      current.pop();
+    }
+  }
+
+  visit(0, []);
+  return result;
+}
+
+function pairingOptions(
+  group: [PlayerSeed, PlayerSeed, PlayerSeed, PlayerSeed],
+) {
+  const [a, b, c, d] = group;
+  return [
+    {
+      teamOne: [a, b] as [PlayerSeed, PlayerSeed],
+      teamTwo: [c, d] as [PlayerSeed, PlayerSeed],
+    },
+    {
+      teamOne: [a, c] as [PlayerSeed, PlayerSeed],
+      teamTwo: [b, d] as [PlayerSeed, PlayerSeed],
+    },
+    {
+      teamOne: [a, d] as [PlayerSeed, PlayerSeed],
+      teamTwo: [b, c] as [PlayerSeed, PlayerSeed],
+    },
+  ];
+}
+
+function candidateScore(
+  teamOne: [PlayerSeed, PlayerSeed],
+  teamTwo: [PlayerSeed, PlayerSeed],
+  partners: PairCounts,
+  opponents: PairCounts,
+) {
+  const repeatedPartners =
+    (partners.get(pairKey(teamOne[0].id, teamOne[1].id)) ?? 0) +
+    (partners.get(pairKey(teamTwo[0].id, teamTwo[1].id)) ?? 0);
+  const repeatedOpponents = teamOne.reduce(
+    (total, player) =>
+      total +
+      teamTwo.reduce(
+        (teamTotal, opponent) =>
+          teamTotal + (opponents.get(pairKey(player.id, opponent.id)) ?? 0),
+        0,
+      ),
+    0,
+  );
+  const ratingDifference = Math.abs(
+    teamOne[0].rating +
+      teamOne[1].rating -
+      teamTwo[0].rating -
+      teamTwo[1].rating,
+  );
+
+  return repeatedPartners * 10_000 + repeatedOpponents * 120 + ratingDifference;
+}
+
+function chooseMatch(
+  remaining: PlayerSeed[],
+  partners: PairCounts,
+  opponents: PairCounts,
+  seed: number,
+  roundNumber: number,
+  courtNumber: number,
+) {
+  let best: Candidate | undefined;
+  const groups = combinations(remaining, 4);
+
+  for (const rawGroup of groups) {
+    const group = rawGroup as [PlayerSeed, PlayerSeed, PlayerSeed, PlayerSeed];
+    for (const pairing of pairingOptions(group)) {
+      const candidate: Candidate = {
+        players: group,
+        ...pairing,
+        score: candidateScore(
+          pairing.teamOne,
+          pairing.teamTwo,
+          partners,
+          opponents,
+        ),
+        tieBreaker: stableNoise(
+          `${roundNumber}:${courtNumber}:${group
+            .map((player) => player.id)
+            .sort()
+            .join(",")}:${pairing.teamOne
+            .map((player) => player.id)
+            .sort()
+            .join(",")}`,
+          seed,
+        ),
+      };
+
+      if (
+        !best ||
+        candidate.score < best.score ||
+        (candidate.score === best.score &&
+          candidate.tieBreaker < best.tieBreaker)
+      ) {
+        best = candidate;
+      }
+    }
+  }
+
+  if (!best) {
+    throw new Error("Unable to build a complete match.");
+  }
+
+  return best;
+}
+
+function validatePlayers(players: PlayerSeed[]) {
+  if (players.length < 4) {
+    throw new Error("At least four players are required.");
+  }
+
+  const ids = new Set<string>();
+  for (const player of players) {
+    if (!player.id.trim() || player.id.toLowerCase().includes("placeholder")) {
+      throw new Error("Players must have stable, non-placeholder IDs.");
+    }
+    if (ids.has(player.id)) {
+      throw new Error(`Duplicate player ID: ${player.id}`);
+    }
+    if (
+      !Number.isFinite(player.rating) ||
+      player.rating < 1 ||
+      player.rating > 10
+    ) {
+      throw new Error(`Invalid rating for ${player.name}.`);
+    }
+    ids.add(player.id);
+  }
+}
+
+export function generateSchedule(options: {
+  players: PlayerSeed[];
+  courtCounts: number[];
+  seed: number;
+}): Schedule {
+  const { players, courtCounts, seed } = options;
+  validatePlayers(players);
+  if (!courtCounts.length || courtCounts.some((count) => count < 1)) {
+    throw new Error("Every round must have at least one court.");
+  }
+
+  const appearances = new Map(players.map((player) => [player.id, 0]));
+  const restStreaks = new Map(players.map((player) => [player.id, 0]));
+  const partners: PairCounts = new Map();
+  const opponents: PairCounts = new Map();
+  const rounds: ScheduledRound[] = [];
+
+  for (let roundIndex = 0; roundIndex < courtCounts.length; roundIndex += 1) {
+    const roundNumber = roundIndex + 1;
+    const courtCount = Math.min(
+      courtCounts[roundIndex],
+      Math.floor(players.length / 4),
+    );
+    const playingCount = courtCount * 4;
+    const selected = [...players]
+      .sort((first, second) => {
+        const firstScore =
+          (appearances.get(first.id) ?? 0) * 1_000 -
+          (restStreaks.get(first.id) ?? 0) * 120 +
+          stableNoise(`${roundNumber}:${first.id}`, seed);
+        const secondScore =
+          (appearances.get(second.id) ?? 0) * 1_000 -
+          (restStreaks.get(second.id) ?? 0) * 120 +
+          stableNoise(`${roundNumber}:${second.id}`, seed);
+        return firstScore - secondScore;
+      })
+      .slice(0, playingCount);
+
+    const remaining = [...selected];
+    const matches: ScheduledMatch[] = [];
+
+    for (let courtIndex = 0; courtIndex < courtCount; courtIndex += 1) {
+      const courtNumber = courtIndex + 1;
+      const chosen = chooseMatch(
+        remaining,
+        partners,
+        opponents,
+        seed,
+        roundNumber,
+        courtNumber,
+      );
+      const selectedIds = new Set(chosen.players.map((player) => player.id));
+      remaining.splice(
+        0,
+        remaining.length,
+        ...remaining.filter((player) => !selectedIds.has(player.id)),
+      );
+
+      incrementPair(partners, chosen.teamOne[0].id, chosen.teamOne[1].id);
+      incrementPair(partners, chosen.teamTwo[0].id, chosen.teamTwo[1].id);
+      for (const first of chosen.teamOne) {
+        for (const second of chosen.teamTwo) {
+          incrementPair(opponents, first.id, second.id);
+        }
+      }
+
+      matches.push({
+        id: `r${roundNumber}-c${courtNumber}`,
+        roundNumber,
+        courtNumber,
+        teamOne: [chosen.teamOne[0].id, chosen.teamOne[1].id],
+        teamTwo: [chosen.teamTwo[0].id, chosen.teamTwo[1].id],
+      });
+    }
+
+    const selectedIds = new Set(selected.map((player) => player.id));
+    const restingPlayerIds = players
+      .filter((player) => !selectedIds.has(player.id))
+      .map((player) => player.id);
+
+    for (const player of players) {
+      if (selectedIds.has(player.id)) {
+        appearances.set(player.id, (appearances.get(player.id) ?? 0) + 1);
+        restStreaks.set(player.id, 0);
+      } else {
+        restStreaks.set(player.id, (restStreaks.get(player.id) ?? 0) + 1);
+      }
+    }
+
+    rounds.push({
+      roundNumber,
+      courtCount,
+      matches,
+      restingPlayerIds,
+    });
+  }
+
+  return { seed, rounds };
+}
