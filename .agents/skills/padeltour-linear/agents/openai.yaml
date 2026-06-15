@@ -1,0 +1,4 @@
+interface:
+  display_name: "Padeltour Linear"
+  short_description: "Keep Padeltour work synchronized with Linear"
+  default_prompt: "Use $padeltour-linear to work on a Padeltour Linear issue and keep its status synchronized."
