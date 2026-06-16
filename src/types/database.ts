@@ -12,6 +12,33 @@ export type Database = {
   };
   public: {
     Tables: {
+      app_users: {
+        Row: {
+          id: string;
+          email: string;
+          display_name: string;
+          role: "member" | "admin";
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id: string;
+          email: string;
+          display_name?: string;
+          role?: "member" | "admin";
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          email?: string;
+          display_name?: string;
+          role?: "member" | "admin";
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
       players: {
         Row: {
           id: string;

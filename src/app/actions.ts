@@ -8,6 +8,7 @@ import { calculateScheduleCapacity } from "@/domain/schedule-calculations";
 import type { ScheduleCapacity } from "@/domain/schedule-calculations";
 import { generateSchedule } from "@/domain/scheduler";
 import { createServerClient } from "@/lib/supabase/server";
+import { createAuthClient } from "@/lib/supabase/server";
 import { eventSchema, playerSchema, scoreSchema } from "@/lib/validation";
 
 export type ActionState = {
@@ -19,6 +20,14 @@ const unavailable: ActionState = {
   ok: false,
   message: "Connect Supabase to enable persistent changes.",
 };
+
+export async function signOut() {
+  const authClient = await createAuthClient();
+  if (authClient) {
+    await authClient.auth.signOut();
+  }
+  redirect("/login");
+}
 
 export async function savePlayer(
   _previous: ActionState,

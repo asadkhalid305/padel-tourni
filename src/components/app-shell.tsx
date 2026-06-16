@@ -1,11 +1,21 @@
 "use client";
 
-import { CalendarDays, CircleGauge, History, Plus, Users } from "lucide-react";
+import {
+  CalendarDays,
+  CircleGauge,
+  History,
+  LogOut,
+  Plus,
+  Users,
+} from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { use } from "react";
 import type { ReactNode } from "react";
 
+import { signOut } from "@/app/actions";
 import { cn } from "@/lib/utils";
+import type { AuthenticatedAppUser } from "@/lib/supabase/server";
 
 const navigation = [
   { href: "/", label: "Dashboard", icon: CircleGauge },
@@ -14,8 +24,20 @@ const navigation = [
   { href: "/history", label: "History", icon: History },
 ];
 
-export function AppShell({ children }: { children: ReactNode }) {
+export function AppShell({
+  children,
+  userPromise,
+}: {
+  children: ReactNode;
+  userPromise: Promise<AuthenticatedAppUser | null>;
+}) {
   const pathname = usePathname();
+  const user = use(userPromise);
+
+  if (pathname === "/login") {
+    return children;
+  }
+
   return (
     <div className="min-h-screen lg:grid lg:grid-cols-[250px_1fr]">
       <aside className="hidden border-r border-white/10 bg-[var(--ink)] p-5 text-white lg:flex lg:flex-col">
@@ -60,11 +82,22 @@ export function AppShell({ children }: { children: ReactNode }) {
           <Plus size={18} />
           New event
         </Link>
-        <div className="mt-auto rounded-2xl border border-white/10 bg-white/5 p-4">
-          <p className="text-sm font-bold">Fair play first</p>
-          <p className="mt-1 text-xs leading-5 text-white/55">
-            Rotations balance court time, partners, opponents, and ratings.
-          </p>
+        <div className="mt-auto space-y-3">
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+            <p className="text-sm font-bold">Fair play first</p>
+            <p className="mt-1 text-xs leading-5 text-white/55">
+              Rotations balance court time, partners, opponents, and ratings.
+            </p>
+          </div>
+          <form action={signOut}>
+            <button
+              type="submit"
+              className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-white/10 px-3 text-sm font-bold text-white/75 transition hover:bg-white/10 hover:text-white"
+            >
+              <LogOut size={17} />
+              Sign out
+            </button>
+          </form>
         </div>
       </aside>
 
@@ -80,14 +113,25 @@ export function AppShell({ children }: { children: ReactNode }) {
             Padel Tour
           </Link>
           <p className="hidden text-sm font-semibold text-slate-500 lg:block">
-            Recreational events, run beautifully.
+            {user?.email ?? "Recreational events, run beautifully."}
           </p>
-          <Link
-            href="/events/new"
-            className="rounded-xl bg-[var(--ink)] px-4 py-2.5 text-sm font-bold text-white"
-          >
-            New event
-          </Link>
+          <div className="flex items-center gap-2">
+            <Link
+              href="/events/new"
+              className="rounded-xl bg-[var(--ink)] px-4 py-2.5 text-sm font-bold text-white"
+            >
+              New event
+            </Link>
+            <form action={signOut}>
+              <button
+                type="submit"
+                className="grid size-10 place-items-center rounded-xl border border-emerald-950/10 bg-white text-[var(--ink)]"
+                aria-label="Sign out"
+              >
+                <LogOut size={17} />
+              </button>
+            </form>
+          </div>
         </header>
         <div className="mx-auto max-w-[1500px] p-5 sm:p-7 lg:p-9">
           {children}

@@ -33,7 +33,7 @@ Fill the Supabase variables in `.env.local`, then:
 npm run dev
 ```
 
-Without Supabase variables the app runs in read-only demo mode.
+Supabase variables are required for authentication. Configure Google as an Auth provider in Supabase and add `/auth/callback` to the allowed redirect URLs.
 
 ## Environment
 
@@ -41,10 +41,11 @@ Without Supabase variables the app runs in read-only demo mode.
 NEXT_PUBLIC_SUPABASE_URL
 SUPABASE_PUBLISHABLE_KEY
 SUPABASE_SECRET_KEY
+ADMIN_ROLE_API_SECRET
 CONTEXT7_API_KEY
 ```
 
-`SUPABASE_SECRET_KEY` is server-only and must never use a `NEXT_PUBLIC_` prefix. `CONTEXT7_API_KEY` is optional and only raises MCP rate limits.
+`SUPABASE_SECRET_KEY` and `ADMIN_ROLE_API_SECRET` are server-only and must never use a `NEXT_PUBLIC_` prefix. `CONTEXT7_API_KEY` is optional and only raises MCP rate limits.
 
 ## Supabase
 
@@ -77,6 +78,20 @@ The official Context7 endpoint is configured in `.codex/config.toml`. Codex load
 
 Deploy as a standard Next.js application and configure the three Supabase environment variables in the hosting platform. Database migrations must be applied before the first production request.
 
-Authentication is intentionally out of scope. All data access currently runs through server-only actions using the Supabase secret key, with RLS enabled and browser roles denied. Add authentication before exposing the app to untrusted users.
+Users sign in with Google through Supabase Auth. First-time sign-in creates a `member` account in `public.app_users`; administrators can grant or revoke the `admin` role through the server-only admin endpoints:
+
+```bash
+curl -X POST http://localhost:3000/api/admin/users/grant \
+  -H "content-type: application/json" \
+  -H "x-admin-role-secret: $ADMIN_ROLE_API_SECRET" \
+  -d '{"email":"organizer@example.com"}'
+
+curl -X POST http://localhost:3000/api/admin/users/revoke \
+  -H "content-type: application/json" \
+  -H "x-admin-role-secret: $ADMIN_ROLE_API_SECRET" \
+  -d '{"email":"organizer@example.com"}'
+```
+
+Full RBAC is intentionally deferred; existing data access still runs through server-only actions using the Supabase secret key, with RLS enabled and browser roles denied.
 
 GitHub: [asadkhalid305/padeltour](https://github.com/asadkhalid305/padeltour)

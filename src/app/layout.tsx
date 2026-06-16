@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 
 import { AppShell } from "@/components/app-shell";
+import { getAuthenticatedUser } from "@/lib/supabase/server";
 
 import "./globals.css";
 
@@ -18,10 +19,12 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const userPromise = getAuthenticatedUser();
+
   return (
     <html lang="en">
       <body>
-        <AppShell>{children}</AppShell>
+        <AppShell userPromise={userPromise}>{children}</AppShell>
       </body>
     </html>
   );
