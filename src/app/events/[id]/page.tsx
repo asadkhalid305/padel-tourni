@@ -189,7 +189,7 @@ export default async function EventPage({
         <div className="space-y-5">
           {event.schedule.rounds.map((round) => (
             <section key={round.roundNumber}>
-              <div className="mb-3 flex items-center justify-between">
+              <div className="mb-3 flex items-center gap-3">
                 <h2 className="text-xl font-black text-[var(--ink)]">
                   Round {round.roundNumber}
                 </h2>

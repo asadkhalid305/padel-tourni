@@ -7,17 +7,25 @@ export const playerSchema = z.object({
   isActive: z.coerce.boolean().default(true),
 });
 
-export const eventSchema = z.object({
-  name: z.string().trim().min(2).max(120),
-  venue: z.string().trim().max(120),
-  startsAt: z.coerce.date(),
-  seed: z.coerce.number().int().min(1).max(2_147_483_647),
-  roundMinutes: z.coerce.number().int().min(5).max(120),
-  breakMinutes: z.coerce.number().int().min(0).max(30),
-  notes: z.string().trim().max(1000),
-  playerIds: z.array(z.string().uuid()).min(4),
-  courtCounts: z.array(z.number().int().min(1).max(20)).min(1).max(50),
-});
+export const eventSchema = z
+  .object({
+    name: z.string().trim().min(2).max(120),
+    venue: z.string().trim().max(120),
+    startsAt: z.coerce.date(),
+    courtCount: z.coerce.number().int().min(1).max(20),
+    courtMinutes: z
+      .array(z.coerce.number().int().min(5).max(1440))
+      .min(1)
+      .max(20),
+    requestedRoundMinutes: z.coerce.number().int().min(5).max(120),
+    breakMinutes: z.coerce.number().int().min(0).max(30),
+    notes: z.string().trim().max(1000),
+    playerIds: z.array(z.string().uuid()).min(4),
+  })
+  .refine((event) => event.courtMinutes.length === event.courtCount, {
+    message: "Enter availability minutes for each court.",
+    path: ["courtMinutes"],
+  });
 
 export const scoreSchema = z.object({
   matchId: z.string().uuid(),

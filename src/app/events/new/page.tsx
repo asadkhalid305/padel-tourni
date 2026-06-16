@@ -1,6 +1,7 @@
 import { Info, Sparkles } from "lucide-react";
 
 import { createEvent } from "@/app/actions";
+import { EventAvailabilityFields } from "@/components/event-availability-fields";
 import { Button, Card, SectionHeading } from "@/components/ui";
 import { listPlayers } from "@/lib/data";
 import { isSupabaseConfigured } from "@/lib/supabase/server";
@@ -69,57 +70,7 @@ export default async function NewEventPage({
                   required
                 />
               </label>
-              <label className="block">
-                <span className="field-label">Round minutes</span>
-                <input
-                  className="field"
-                  name="roundMinutes"
-                  type="number"
-                  min="5"
-                  max="120"
-                  defaultValue="20"
-                  required
-                />
-              </label>
-              <label className="block">
-                <span className="field-label">Break minutes</span>
-                <input
-                  className="field"
-                  name="breakMinutes"
-                  type="number"
-                  min="0"
-                  max="30"
-                  defaultValue="3"
-                  required
-                />
-              </label>
-              <label className="block">
-                <span className="field-label">Deterministic seed</span>
-                <input
-                  className="field"
-                  name="seed"
-                  type="number"
-                  min="1"
-                  defaultValue="27"
-                  required
-                />
-              </label>
-              <label className="block">
-                <span className="field-label">Courts per round</span>
-                <input
-                  className="field"
-                  name="courtCounts"
-                  defaultValue="2, 2, 2, 1, 2"
-                  required
-                  aria-describedby="court-help"
-                />
-                <span
-                  id="court-help"
-                  className="mt-1 block text-xs text-slate-500"
-                >
-                  Comma-separated. Unequal rounds are supported.
-                </span>
-              </label>
+              <EventAvailabilityFields />
               <label className="block sm:col-span-2">
                 <span className="field-label">Notes</span>
                 <textarea

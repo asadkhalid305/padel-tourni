@@ -4,6 +4,8 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { assertCanRegenerate } from "@/domain/consistency";
+import { calculateScheduleCapacity } from "@/domain/schedule-calculations";
+import type { ScheduleCapacity } from "@/domain/schedule-calculations";
 import { generateSchedule } from "@/domain/scheduler";
 import { createServerClient } from "@/lib/supabase/server";
 import { eventSchema, playerSchema, scoreSchema } from "@/lib/validation";
@@ -89,14 +91,12 @@ export async function createEvent(formData: FormData) {
     name: formData.get("name"),
     venue: formData.get("venue"),
     startsAt: formData.get("startsAt"),
-    seed: formData.get("seed"),
-    roundMinutes: formData.get("roundMinutes"),
+    courtCount: formData.get("courtCount"),
+    courtMinutes: formData.getAll("courtMinutes"),
+    requestedRoundMinutes: formData.get("requestedRoundMinutes"),
     breakMinutes: formData.get("breakMinutes"),
     notes: formData.get("notes"),
     playerIds: formData.getAll("playerIds"),
-    courtCounts: String(formData.get("courtCounts"))
-      .split(",")
-      .map((value) => Number(value.trim())),
   });
   if (!parsed.success) {
     redirect(
@@ -108,6 +108,26 @@ export async function createEvent(formData: FormData) {
   if (!client) {
     redirect("/events/new?error=Connect%20Supabase%20to%20create%20events");
   }
+
+  let capacity: ScheduleCapacity;
+  try {
+    capacity = calculateScheduleCapacity(parsed.data);
+  } catch (error) {
+    redirect(
+      `/events/new?error=${encodeURIComponent(
+        error instanceof Error ? error.message : "Invalid event availability",
+      )}`,
+    );
+  }
+  const seed =
+    Math.abs(
+      Array.from(
+        `${parsed.data.name}:${parsed.data.startsAt.toISOString()}`,
+      ).reduce(
+        (hash, character) => (hash * 31 + character.charCodeAt(0)) | 0,
+        17,
+      ),
+    ) || 1;
 
   const { data: sourcePlayers, error: playerError } = await client
     .from("players")
@@ -124,8 +144,8 @@ export async function createEvent(formData: FormData) {
       venue: parsed.data.venue,
       starts_at: parsed.data.startsAt.toISOString(),
       status: "scheduled",
-      seed: parsed.data.seed,
-      round_minutes: parsed.data.roundMinutes,
+      seed,
+      round_minutes: capacity.roundMinutes,
       break_minutes: parsed.data.breakMinutes,
       notes: parsed.data.notes,
     })
@@ -161,8 +181,11 @@ export async function createEvent(formData: FormData) {
         name: player.name_snapshot,
         rating: Number(player.rating_snapshot),
       })),
-      courtCounts: parsed.data.courtCounts,
-      seed: parsed.data.seed,
+      courtCounts: capacity.courtNumbersByRound.map(
+        (courtNumbers) => courtNumbers.length,
+      ),
+      courtNumbersByRound: capacity.courtNumbersByRound,
+      seed,
     });
 
     for (const round of schedule.rounds) {
@@ -172,7 +195,7 @@ export async function createEvent(formData: FormData) {
           event_id: event.id,
           round_number: round.roundNumber,
           court_count: round.courtCount,
-          duration_seconds: parsed.data.roundMinutes * 60,
+          duration_seconds: capacity.roundMinutes * 60,
         })
         .select("id")
         .single();
@@ -187,7 +210,7 @@ export async function createEvent(formData: FormData) {
           team_one_player_two_id: match.teamOne[1],
           team_two_player_one_id: match.teamTwo[0],
           team_two_player_two_id: match.teamTwo[1],
-          timer_duration_seconds: parsed.data.roundMinutes * 60,
+          timer_duration_seconds: capacity.roundMinutes * 60,
         })),
       );
       if (matchError) throw matchError;

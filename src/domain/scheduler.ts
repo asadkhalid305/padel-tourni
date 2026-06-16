@@ -175,12 +175,27 @@ function validatePlayers(players: PlayerSeed[]) {
 export function generateSchedule(options: {
   players: PlayerSeed[];
   courtCounts: number[];
+  courtNumbersByRound?: number[][];
   seed: number;
 }): Schedule {
-  const { players, courtCounts, seed } = options;
+  const { players, courtCounts, courtNumbersByRound, seed } = options;
   validatePlayers(players);
   if (!courtCounts.length || courtCounts.some((count) => count < 1)) {
     throw new Error("Every round must have at least one court.");
+  }
+  if (
+    courtNumbersByRound &&
+    (courtNumbersByRound.length !== courtCounts.length ||
+      courtNumbersByRound.some(
+        (courtNumbers) =>
+          !courtNumbers.length ||
+          new Set(courtNumbers).size !== courtNumbers.length ||
+          courtNumbers.some(
+            (courtNumber) => !Number.isInteger(courtNumber) || courtNumber < 1,
+          ),
+      ))
+  ) {
+    throw new Error("Court numbers must match scheduled rounds.");
   }
 
   const appearances = new Map(players.map((player) => [player.id, 0]));
@@ -191,10 +206,17 @@ export function generateSchedule(options: {
 
   for (let roundIndex = 0; roundIndex < courtCounts.length; roundIndex += 1) {
     const roundNumber = roundIndex + 1;
+    const roundCourtNumbers =
+      courtNumbersByRound?.[roundIndex] ??
+      Array.from(
+        { length: courtCounts[roundIndex] },
+        (_, courtIndex) => courtIndex + 1,
+      );
     const courtCount = Math.min(
-      courtCounts[roundIndex],
+      roundCourtNumbers.length,
       Math.floor(players.length / 4),
     );
+    const activeCourtNumbers = roundCourtNumbers.slice(0, courtCount);
     const playingCount = courtCount * 4;
     const selected = [...players]
       .sort((first, second) => {
@@ -213,8 +235,7 @@ export function generateSchedule(options: {
     const remaining = [...selected];
     const matches: ScheduledMatch[] = [];
 
-    for (let courtIndex = 0; courtIndex < courtCount; courtIndex += 1) {
-      const courtNumber = courtIndex + 1;
+    for (const courtNumber of activeCourtNumbers) {
       const chosen = chooseMatch(
         remaining,
         partners,

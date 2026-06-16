@@ -4,6 +4,7 @@ import { diagnoseSchedule } from "@/domain/diagnostics";
 import {
   calculateCourtSlots,
   calculatePlayerAppearanceRange,
+  calculateScheduleCapacity,
   calculateScheduledAppearances,
   recommendMatchDuration,
 } from "@/domain/schedule-calculations";
@@ -33,6 +34,58 @@ describe("schedule calculations", () => {
         breakMinutes: 5,
       }),
     ).toBe(26);
+  });
+
+  it("calculates matches and expands rounds to use available event time", () => {
+    expect(
+      calculateScheduleCapacity({
+        courtMinutes: [120, 120],
+        requestedRoundMinutes: 20,
+        breakMinutes: 3,
+      }),
+    ).toEqual({
+      roundCount: 5,
+      matchCount: 10,
+      roundMinutes: 21,
+      courtMinutes: [120, 120],
+      courtNumbersByRound: [
+        [1, 2],
+        [1, 2],
+        [1, 2],
+        [1, 2],
+        [1, 2],
+      ],
+      usedCourtMinutes: 234,
+      unusedCourtMinutes: 6,
+    });
+  });
+
+  it("keeps physical court numbers when availability differs", () => {
+    expect(
+      calculateScheduleCapacity({
+        courtMinutes: [120, 180],
+        requestedRoundMinutes: 20,
+        breakMinutes: 3,
+      }),
+    ).toEqual({
+      roundCount: 7,
+      matchCount: 12,
+      roundMinutes: 21,
+      courtMinutes: [120, 180],
+      courtNumbersByRound: [[1, 2], [1, 2], [1, 2], [1, 2], [1, 2], [2], [2]],
+      usedCourtMinutes: 282,
+      unusedCourtMinutes: 18,
+    });
+  });
+
+  it("rejects events too short for one preferred match", () => {
+    expect(() =>
+      calculateScheduleCapacity({
+        courtMinutes: [15, 15],
+        requestedRoundMinutes: 20,
+        breakMinutes: 3,
+      }),
+    ).toThrow("too short");
   });
 
   it("calculates exact and one-apart appearance ranges", () => {
@@ -93,6 +146,24 @@ describe("schedule generation", () => {
       3, 1, 2, 3,
     ]);
     expect(diagnoseSchedule(schedule, roster).isConsistent).toBe(true);
+  });
+
+  it("assigns matches to explicit court numbers for uneven court minutes", () => {
+    const roster = players(8);
+    const schedule = generateSchedule({
+      players: roster,
+      courtCounts: [2, 1, 1],
+      courtNumbersByRound: [[1, 2], [2], [2]],
+      seed: 31,
+    });
+    expect(schedule.rounds.map((round) => round.matches.length)).toEqual([
+      2, 1, 1,
+    ]);
+    expect(
+      schedule.rounds.map((round) =>
+        round.matches.map((match) => match.courtNumber),
+      ),
+    ).toEqual([[1, 2], [2], [2]]);
   });
 
   it("limits consecutive rests when rotation can avoid them", () => {
