@@ -23,10 +23,9 @@ Treat Linear as the durable record of project work. Use the connected Linear too
 4. Implement and verify the requested work. Keep Linear updates sparse: comment only for a meaningful scope decision, blocker, or completed implementation summary.
 5. When implementation is ready, leave the issue open and report:
    - what changed;
-   - automated verification performed;
-   - exact manual testing steps;
    - known limitations or remaining decisions.
-6. Wait for explicit user approval that manual testing looks good. Do not commit, push, deploy, or close the issue before this approval unless the user explicitly requests a different sequence.
+6. Ask user approval go ahead.
+7. Wait for explicit user approval that manual testing looks good. Do not commit, push, deploy, or close the issue before this approval unless the user explicitly requests a different sequence.
 
 ## Complete A Ticket
 
@@ -35,9 +34,9 @@ After the user approves:
 1. Recheck the diff, relevant tests, and working tree.
 2. Create an intentional commit referencing the Linear issue identifier.
 3. Push the completed work to remote `main` and verify the remote commit.
-4. Add one final Linear comment summarizing the delivered behavior, verification, and commit hash or URL.
+4. Add one final Linear comment summarizing the delivered behavior, and commit hash or URL.
 5. Move the issue to the team's completed status only after the push succeeds.
-6. Report the commit, remote verification, Linear comment, and final issue status to the user.
+6. Report the commit, remote verification, and final issue status to the user.
 
 If implementation or push fails, keep the issue open, record a concise blocker when useful, and do not imply completion.
 
@@ -48,3 +47,4 @@ If implementation or push fails, keep the issue open, record a concise blocker w
 - Link related or duplicate issues instead of copying context.
 - Never silently expand the current ticket; create follow-up issues for out-of-scope discoveries.
 - Preserve issue history. Correct material mistakes with a follow-up comment rather than obscuring what happened.
+- Keep usage of Linear connector concise and optimal.
