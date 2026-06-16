@@ -3,3 +3,12 @@ url = "https://mcp.context7.com/mcp"
 enabled = true
 startup_timeout_sec = 20
 tool_timeout_sec = 60
+[mcp_servers.linear]
+command = "bash"
+args = [
+  "-lc",
+  "export PATH=/bin:/usr/bin:/usr/local/bin:$PATH; source ~/.nvm/nvm.sh && nvm use >/dev/null && set -a && source .env.local && set +a && exec node scripts/linear-mcp-server.mjs",
+]
+enabled = true
+startup_timeout_sec = 20
+tool_timeout_sec = 60
