@@ -218,21 +218,23 @@ export default async function EventPage({
                         <Badge tone={statusTone(status)}>{status}</Badge>
                       </div>
                       <div className="mt-4 grid grid-cols-[1fr_auto_1fr] items-center gap-3">
-                        {[match.teamOne, match.teamTwo].map((team, index) => (
-                          <div
-                            key={index}
-                            className="rounded-2xl bg-slate-50 p-4 text-center"
-                          >
-                            {team.map((playerId) => (
-                              <p key={playerId} className="text-sm font-bold">
-                                {playerById.get(playerId)?.name ?? "Unknown"}
-                              </p>
-                            ))}
-                          </div>
-                        ))}
+                        <div className="rounded-2xl bg-slate-50 p-4 text-center">
+                          {match.teamOne.map((playerId) => (
+                            <p key={playerId} className="text-sm font-bold">
+                              {playerById.get(playerId)?.name ?? "Unknown"}
+                            </p>
+                          ))}
+                        </div>
                         <span className="text-xs font-black text-slate-300">
                           VS
                         </span>
+                        <div className="rounded-2xl bg-slate-50 p-4 text-center">
+                          {match.teamTwo.map((playerId) => (
+                            <p key={playerId} className="text-sm font-bold">
+                              {playerById.get(playerId)?.name ?? "Unknown"}
+                            </p>
+                          ))}
+                        </div>
                       </div>
                       <MatchEditor
                         matchId={match.id}
@@ -287,16 +289,21 @@ export default async function EventPage({
                   <Badge tone={statusTone(status)}>{status}</Badge>
                 </div>
                 <div className="mt-4 grid grid-cols-[1fr_auto_1fr] items-center gap-3">
-                  {[match.teamOne, match.teamTwo].map((team, index) => (
-                    <div key={index} className="text-center">
-                      {team.map((playerId) => (
-                        <p key={playerId} className="text-sm font-bold">
-                          {playerById.get(playerId)?.name}
-                        </p>
-                      ))}
-                    </div>
-                  ))}
+                  <div className="text-center">
+                    {match.teamOne.map((playerId) => (
+                      <p key={playerId} className="text-sm font-bold">
+                        {playerById.get(playerId)?.name}
+                      </p>
+                    ))}
+                  </div>
                   <span className="text-sm font-black text-slate-300">VS</span>
+                  <div className="text-center">
+                    {match.teamTwo.map((playerId) => (
+                      <p key={playerId} className="text-sm font-bold">
+                        {playerById.get(playerId)?.name}
+                      </p>
+                    ))}
+                  </div>
                 </div>
                 {status === "completed" ? (
                   <div className="mt-5 rounded-2xl bg-emerald-50 p-4 text-center">
