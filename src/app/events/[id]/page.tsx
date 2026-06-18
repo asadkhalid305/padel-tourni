@@ -1,8 +1,9 @@
 import {
-  Activity,
   ArrowLeft,
+  CalendarClock,
   CircleCheckBig,
   Clock3,
+  ListChecks,
   Scale,
   ShieldCheck,
   Users,
@@ -26,6 +27,18 @@ function statusTone(status: string) {
   if (status === "live") return "live" as const;
   if (status === "paused") return "warning" as const;
   return "info" as const;
+}
+
+function formatDuration(seconds: number) {
+  const minutes = seconds / 60;
+  return Number.isInteger(minutes)
+    ? `${minutes} min`
+    : `${minutes.toFixed(1)} min`;
+}
+
+function formatCourtList(courts: number[]) {
+  if (!courts.length) return "No courts";
+  return courts.map((court) => `Court ${court}`).join(", ");
 }
 
 export default async function EventPage({
@@ -57,6 +70,28 @@ export default async function EventPage({
     event.completedMatches.map((match) => [match.id, match]),
   );
   const allMatches = event.schedule.rounds.flatMap((round) => round.matches);
+  const courtNumbers = [
+    ...new Set(allMatches.map((match) => match.courtNumber)),
+  ].sort((first, second) => first - second);
+  const roundTiming = event.schedule.rounds.map((round, index) => {
+    const durations = [
+      ...new Set(
+        round.matches.map((match) => {
+          const enriched = match as ScheduledMatch & Partial<EventMatch>;
+          return enriched.timerDurationSeconds ?? event.roundMinutes * 60;
+        }),
+      ),
+    ].sort((first, second) => first - second);
+    return {
+      roundNumber: round.roundNumber,
+      courts: round.matches
+        .map((match) => match.courtNumber)
+        .sort((first, second) => first - second),
+      durations,
+      breakMinutes:
+        index === event.schedule.rounds.length - 1 ? 0 : event.breakMinutes,
+    };
+  });
 
   const tabs = [
     { value: "overview", label: "Overview" },
@@ -159,6 +194,7 @@ export default async function EventPage({
                 ["Appearance spread", diagnostics.appearanceSpread],
                 ["Max rest streak", diagnostics.maxConsecutiveRests],
                 ["Repeated partners", diagnostics.repeatedPartnerPairs],
+                ["Repeated opponents", diagnostics.repeatedOpponentPairs],
                 [
                   "Avg. rating gap",
                   diagnostics.averageRatingDifference.toFixed(1),
@@ -184,6 +220,75 @@ export default async function EventPage({
               {diagnostics.isConsistent
                 ? "Schedule consistency checks pass."
                 : diagnostics.issues.join(" ")}
+            </div>
+          </Card>
+          <Card className="xl:col-span-2">
+            <div className="flex items-center gap-2">
+              <ListChecks size={19} className="text-[var(--green)]" />
+              <h2 className="text-xl font-black">Draw transparency</h2>
+            </div>
+            <div className="mt-3 grid gap-3 text-sm leading-6 text-slate-600 lg:grid-cols-2">
+              <p>
+                The draw first balances how often every player appears, then
+                limits back-to-back rests, avoids repeat partners and opponents,
+                and then uses snapshot ratings to make each match as even as
+                possible.
+              </p>
+              <p>
+                For each match, the scheduler compares the possible team pairs
+                and prefers the lowest gap between the two team rating totals,
+                for example 8+5 against 7+6.
+              </p>
+            </div>
+            <div className="mt-4 rounded-xl bg-emerald-50 p-3 text-sm font-semibold leading-6 text-emerald-900">
+              Avg rating gap is not the gap between partners. It measures how
+              close each player&apos;s matches were between the two sides. If a
+              perfectly balanced pairing is not possible, the draw uses the
+              fairest available compromise; ask an admin if a draw should be
+              changed.
+            </div>
+            <div className="mt-5 overflow-x-auto">
+              <table className="w-full min-w-[820px] border-collapse text-sm">
+                <thead className="bg-slate-50 text-left text-xs uppercase tracking-[0.12em] text-slate-500">
+                  <tr>
+                    {[
+                      "Player",
+                      "Apps",
+                      "Rests",
+                      "Max rest",
+                      "Repeat partners",
+                      "Repeat opponents",
+                      "Avg rating gap",
+                    ].map((heading) => (
+                      <th key={heading} className="px-4 py-3 font-black">
+                        {heading}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {diagnostics.playerFairness.map((player) => (
+                    <tr
+                      key={player.playerId}
+                      className="border-b border-slate-100 last:border-0"
+                    >
+                      <td className="px-4 py-3 font-bold text-[var(--ink)]">
+                        {player.playerName}
+                      </td>
+                      <td className="px-4 py-3">{player.appearances}</td>
+                      <td className="px-4 py-3">{player.rests}</td>
+                      <td className="px-4 py-3">
+                        {player.maxConsecutiveRests}
+                      </td>
+                      <td className="px-4 py-3">{player.repeatedPartners}</td>
+                      <td className="px-4 py-3">{player.repeatedOpponents}</td>
+                      <td className="px-4 py-3">
+                        {player.averageRatingDifference.toFixed(1)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </Card>
         </div>
@@ -412,19 +517,67 @@ export default async function EventPage({
         </Card>
       ) : null}
 
-      <div className="grid gap-3 sm:grid-cols-3">
+      <Card>
+        <div className="flex items-center gap-2">
+          <CalendarClock size={19} className="text-[var(--green)]" />
+          <h2 className="text-xl font-black">Tournament timing</h2>
+        </div>
+        <div className="mt-5 overflow-x-auto">
+          <table className="w-full min-w-[680px] border-collapse text-sm">
+            <thead className="bg-slate-50 text-left text-xs uppercase tracking-[0.12em] text-slate-500">
+              <tr>
+                {["Round", "Courts", "Match time", "Break after"].map(
+                  (heading) => (
+                    <th key={heading} className="px-4 py-3 font-black">
+                      {heading}
+                    </th>
+                  ),
+                )}
+              </tr>
+            </thead>
+            <tbody>
+              {roundTiming.map((round) => (
+                <tr
+                  key={round.roundNumber}
+                  className="border-b border-slate-100 last:border-0"
+                >
+                  <td className="px-4 py-3 font-bold text-[var(--ink)]">
+                    Round {round.roundNumber}
+                  </td>
+                  <td className="px-4 py-3">{formatCourtList(round.courts)}</td>
+                  <td className="px-4 py-3">
+                    {round.durations.map(formatDuration).join(", ")}
+                  </td>
+                  <td className="px-4 py-3">
+                    {round.breakMinutes ? `${round.breakMinutes} min` : "Done"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Card className="flex items-center gap-3 py-4">
           <Clock3 className="text-[var(--green)]" size={20} />
           <span>
             <strong className="block text-sm">{event.roundMinutes} min</strong>
-            <span className="text-xs text-slate-500">per round</span>
+            <span className="text-xs text-slate-500">match duration</span>
           </span>
         </Card>
         <Card className="flex items-center gap-3 py-4">
-          <Activity className="text-[var(--green)]" size={20} />
+          <CalendarClock className="text-[var(--green)]" size={20} />
           <span>
-            <strong className="block text-sm">{event.seed}</strong>
-            <span className="text-xs text-slate-500">schedule seed</span>
+            <strong className="block text-sm">{event.breakMinutes} min</strong>
+            <span className="text-xs text-slate-500">between rounds</span>
+          </span>
+        </Card>
+        <Card className="flex items-center gap-3 py-4">
+          <Users className="text-[var(--green)]" size={20} />
+          <span>
+            <strong className="block text-sm">{courtNumbers.length}</strong>
+            <span className="text-xs text-slate-500">courts used</span>
           </span>
         </Card>
         <Card className="flex items-center gap-3 py-4">

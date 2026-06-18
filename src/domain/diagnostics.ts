@@ -11,8 +11,20 @@ export type FairnessDiagnostics = {
   repeatedOpponentPairs: number;
   maxConsecutiveRests: number;
   averageRatingDifference: number;
+  playerFairness: PlayerFairnessDiagnostic[];
   isConsistent: boolean;
   issues: string[];
+};
+
+export type PlayerFairnessDiagnostic = {
+  playerId: string;
+  playerName: string;
+  appearances: number;
+  rests: number;
+  maxConsecutiveRests: number;
+  repeatedPartners: number;
+  repeatedOpponents: number;
+  averageRatingDifference: number;
 };
 
 export function diagnoseSchedule(
@@ -27,6 +39,17 @@ export function diagnoseSchedule(
   const partnerCounts = new Map<string, number>();
   const opponentCounts = new Map<string, number>();
   const restStreaks = new Map(players.map((player) => [player.id, 0]));
+  const playerRestCounts = new Map(players.map((player) => [player.id, 0]));
+  const playerMaxRestStreaks = new Map(players.map((player) => [player.id, 0]));
+  const playerPartnerCounts = new Map(
+    players.map((player) => [player.id, new Map<string, number>()]),
+  );
+  const playerOpponentCounts = new Map(
+    players.map((player) => [player.id, new Map<string, number>()]),
+  );
+  const playerRatingDifferenceTotals = new Map(
+    players.map((player) => [player.id, 0]),
+  );
   let maxConsecutiveRests = 0;
   let ratingDifferenceTotal = 0;
   let matchCount = 0;
@@ -60,11 +83,35 @@ export function diagnoseSchedule(
       for (const team of [match.teamOne, match.teamTwo]) {
         const key = pairKey(team[0], team[1]);
         partnerCounts.set(key, (partnerCounts.get(key) ?? 0) + 1);
+        for (const [playerId, partnerId] of [
+          [team[0], team[1]],
+          [team[1], team[0]],
+        ]) {
+          const playerPartners = playerPartnerCounts.get(playerId);
+          if (playerPartners) {
+            playerPartners.set(
+              partnerId,
+              (playerPartners.get(partnerId) ?? 0) + 1,
+            );
+          }
+        }
       }
       for (const first of match.teamOne) {
         for (const second of match.teamTwo) {
           const key = pairKey(first, second);
           opponentCounts.set(key, (opponentCounts.get(key) ?? 0) + 1);
+          for (const [playerId, opponentId] of [
+            [first, second],
+            [second, first],
+          ]) {
+            const playerOpponents = playerOpponentCounts.get(playerId);
+            if (playerOpponents) {
+              playerOpponents.set(
+                opponentId,
+                (playerOpponents.get(opponentId) ?? 0) + 1,
+              );
+            }
+          }
         }
       }
 
@@ -76,7 +123,14 @@ export function diagnoseSchedule(
         (total, id) => total + (ratings.get(id) ?? 0),
         0,
       );
-      ratingDifferenceTotal += Math.abs(teamOneRating - teamTwoRating);
+      const ratingDifference = Math.abs(teamOneRating - teamTwoRating);
+      ratingDifferenceTotal += ratingDifference;
+      for (const id of ids) {
+        playerRatingDifferenceTotals.set(
+          id,
+          (playerRatingDifferenceTotals.get(id) ?? 0) + ratingDifference,
+        );
+      }
       matchCount += 1;
     }
 
@@ -86,6 +140,16 @@ export function diagnoseSchedule(
         : (restStreaks.get(player.id) ?? 0) + 1;
       restStreaks.set(player.id, streak);
       maxConsecutiveRests = Math.max(maxConsecutiveRests, streak);
+      playerMaxRestStreaks.set(
+        player.id,
+        Math.max(playerMaxRestStreaks.get(player.id) ?? 0, streak),
+      );
+      if (!roundPlayers.has(player.id)) {
+        playerRestCounts.set(
+          player.id,
+          (playerRestCounts.get(player.id) ?? 0) + 1,
+        );
+      }
     }
   }
 
@@ -109,6 +173,29 @@ export function diagnoseSchedule(
     issues.push("Player appearances differ by more than one.");
   }
 
+  const playerFairness = players.map((player) => {
+    const appearances = appearanceCounts[player.id] ?? 0;
+    const repeatedPartners = [
+      ...(playerPartnerCounts.get(player.id)?.values() ?? []),
+    ].filter((count) => count > 1).length;
+    const repeatedOpponents = [
+      ...(playerOpponentCounts.get(player.id)?.values() ?? []),
+    ].filter((count) => count > 1).length;
+
+    return {
+      playerId: player.id,
+      playerName: player.name,
+      appearances,
+      rests: playerRestCounts.get(player.id) ?? 0,
+      maxConsecutiveRests: playerMaxRestStreaks.get(player.id) ?? 0,
+      repeatedPartners,
+      repeatedOpponents,
+      averageRatingDifference: appearances
+        ? (playerRatingDifferenceTotals.get(player.id) ?? 0) / appearances
+        : 0,
+    };
+  });
+
   return {
     appearanceCounts,
     appearanceSpread,
@@ -122,6 +209,7 @@ export function diagnoseSchedule(
     averageRatingDifference: matchCount
       ? ratingDifferenceTotal / matchCount
       : 0,
+    playerFairness,
     isConsistent: issues.length === 0,
     issues,
   };
