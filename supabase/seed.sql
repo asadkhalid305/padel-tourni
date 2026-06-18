@@ -31,26 +31,28 @@ where id in (
   '10000000-0000-0000-0000-000000000013'
 );
 
-insert into public.players (id, name, rating, is_active)
+insert into public.players (id, name, rating, is_active, account_email)
 values
-  ('10000000-0000-4000-8000-000000000001', 'Maya Fischer', 7.5, true),
-  ('10000000-0000-4000-8000-000000000002', 'Noah Becker', 6.0, true),
-  ('10000000-0000-4000-8000-000000000003', 'Sofia Keller', 8.0, true),
-  ('10000000-0000-4000-8000-000000000004', 'Leon Weber', 5.5, true),
-  ('10000000-0000-4000-8000-000000000005', 'Amira Wagner', 7.0, true),
-  ('10000000-0000-4000-8000-000000000006', 'Elias Hoffmann', 6.5, true),
-  ('10000000-0000-4000-8000-000000000007', 'Nina Bauer', 5.0, true),
-  ('10000000-0000-4000-8000-000000000008', 'Jonas Richter', 8.5, true),
-  ('10000000-0000-4000-8000-000000000009', 'Lina Schmitt', 6.0, true),
-  ('10000000-0000-4000-8000-000000000010', 'Omar Haddad', 7.2, true),
-  ('10000000-0000-4000-8000-000000000011', 'Clara Vogel', 4.8, true),
-  ('10000000-0000-4000-8000-000000000012', 'Ben Schneider', 5.9, true),
-  ('10000000-0000-4000-8000-000000000013', 'Tara Meier', 6.8, false)
+  ('10000000-0000-4000-8000-000000000001', 'Maya Fischer', 7.5, true, null),
+  ('10000000-0000-4000-8000-000000000002', 'Noah Becker', 6.0, true, null),
+  ('10000000-0000-4000-8000-000000000003', 'Sofia Keller', 8.0, true, null),
+  ('10000000-0000-4000-8000-000000000004', 'Leon Weber', 5.5, true, null),
+  ('10000000-0000-4000-8000-000000000005', 'Amira Wagner', 7.0, true, null),
+  ('10000000-0000-4000-8000-000000000006', 'Elias Hoffmann', 6.5, true, null),
+  ('10000000-0000-4000-8000-000000000007', 'Nina Bauer', 5.0, true, null),
+  ('10000000-0000-4000-8000-000000000008', 'Jonas Richter', 8.5, true, null),
+  ('10000000-0000-4000-8000-000000000009', 'Lina Schmitt', 6.0, true, null),
+  ('10000000-0000-4000-8000-000000000010', 'Omar Haddad', 7.2, true, null),
+  ('10000000-0000-4000-8000-000000000011', 'Clara Vogel', 4.8, true, null),
+  ('10000000-0000-4000-8000-000000000012', 'Ben Schneider', 5.9, true, null),
+  ('10000000-0000-4000-8000-000000000013', 'Tara Meier', 6.8, false, null),
+  ('10000000-0000-4000-8000-000000000014', 'Asad Ullah Khalid', 6.0, true, 'asadkhalid305@gmail.com')
 on conflict (id) do update
 set
   name = excluded.name,
   rating = excluded.rating,
-  is_active = excluded.is_active;
+  is_active = excluded.is_active,
+  account_email = excluded.account_email;
 
 insert into public.events (
   id,
