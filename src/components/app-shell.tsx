@@ -40,8 +40,8 @@ export function AppShell({
   }
 
   return (
-    <div className="min-h-screen lg:grid lg:grid-cols-[250px_1fr]">
-      <aside className="hidden border-r border-white/10 bg-[var(--ink)] p-5 text-white lg:flex lg:flex-col">
+    <div className="h-dvh overflow-hidden lg:grid lg:grid-cols-[250px_1fr]">
+      <aside className="hidden min-h-0 overflow-y-auto border-r border-white/10 bg-[var(--ink)] p-5 text-white lg:flex lg:flex-col">
         <Link href="/" className="flex items-center gap-3 px-2 py-4">
           <span className="grid size-11 place-items-center rounded-2xl bg-[var(--lime)] text-lg font-black text-[var(--ink)]">
             P
@@ -104,42 +104,46 @@ export function AppShell({
         </div>
       </aside>
 
-      <main className="min-w-0 pb-24 lg:pb-0">
-        <header className="flex items-center justify-between border-b border-emerald-950/5 bg-white/55 px-5 py-4 backdrop-blur lg:px-9">
-          <Link
-            href="/"
-            className="flex items-center gap-2 font-black lg:hidden"
-          >
-            <span className="grid size-9 place-items-center rounded-xl bg-[var(--lime)]">
-              P
-            </span>
-            Padel Tour
-          </Link>
-          <p className="hidden text-sm font-semibold text-slate-500 lg:block">
-            {user?.email ?? "Recreational events, run beautifully."}
-          </p>
-          <div className="flex items-center gap-2">
-            {isAdmin ? (
-              <Link
-                href="/events/new"
-                className="rounded-xl bg-[var(--ink)] px-4 py-2.5 text-sm font-bold text-white"
-              >
-                New event
-              </Link>
-            ) : null}
-            <form action={signOut}>
-              <button
-                type="submit"
-                className="grid size-10 place-items-center rounded-xl border border-emerald-950/10 bg-white text-[var(--ink)]"
-                aria-label="Sign out"
-              >
-                <LogOut size={17} />
-              </button>
-            </form>
+      <main className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden">
+        <header className="shrink-0 border-b border-emerald-950/5 bg-white/55 px-5 py-4 backdrop-blur lg:px-9">
+          <div className="flex items-center justify-between">
+            <Link
+              href="/"
+              className="flex items-center gap-2 font-black lg:hidden"
+            >
+              <span className="grid size-9 place-items-center rounded-xl bg-[var(--lime)]">
+                P
+              </span>
+              Padel Tour
+            </Link>
+            <p className="hidden text-sm font-semibold text-slate-500 lg:block">
+              {user?.email ?? "Recreational events, run beautifully."}
+            </p>
+            <div className="flex items-center gap-2">
+              {isAdmin ? (
+                <Link
+                  href="/events/new"
+                  className="rounded-xl bg-[var(--ink)] px-4 py-2.5 text-sm font-bold text-white"
+                >
+                  New event
+                </Link>
+              ) : null}
+              <form action={signOut}>
+                <button
+                  type="submit"
+                  className="grid size-10 place-items-center rounded-xl border border-emerald-950/10 bg-white text-[var(--ink)]"
+                  aria-label="Sign out"
+                >
+                  <LogOut size={17} />
+                </button>
+              </form>
+            </div>
           </div>
         </header>
-        <div className="mx-auto max-w-[1500px] p-5 sm:p-7 lg:p-9">
-          {children}
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <div className="mx-auto max-w-[1500px] p-5 pb-28 sm:p-7 sm:pb-28 lg:p-9">
+            {children}
+          </div>
         </div>
       </main>
 
