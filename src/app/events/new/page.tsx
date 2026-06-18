@@ -4,7 +4,11 @@ import { createEvent } from "@/app/actions";
 import { EventAvailabilityFields } from "@/components/event-availability-fields";
 import { Button, Card, SectionHeading } from "@/components/ui";
 import { listPlayers } from "@/lib/data";
-import { isSupabaseConfigured } from "@/lib/supabase/server";
+import {
+  getAuthenticatedUser,
+  isSupabaseConfigured,
+} from "@/lib/supabase/server";
+import { redirect } from "next/navigation";
 
 export const metadata = { title: "New event" };
 
@@ -13,8 +17,15 @@ export default async function NewEventPage({
 }: {
   searchParams: Promise<{ error?: string }>;
 }) {
-  const players = (await listPlayers()).filter((player) => player.isActive);
-  const { error } = await searchParams;
+  const [players, { error }, user] = await Promise.all([
+    listPlayers(),
+    searchParams,
+    getAuthenticatedUser(),
+  ]);
+  if (user?.role !== "admin") {
+    redirect("/events");
+  }
+  const activePlayers = players.filter((player) => player.isActive);
   const configured = isSupabaseConfigured();
 
   return (
@@ -91,7 +102,7 @@ export default async function NewEventPage({
               Choose at least four. Names and ratings are snapshotted now.
             </p>
             <div className="mt-5 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-              {players.map((player) => (
+              {activePlayers.map((player) => (
                 <label
                   key={player.id}
                   className="flex cursor-pointer items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 has-[:checked]:border-emerald-500 has-[:checked]:bg-emerald-50"

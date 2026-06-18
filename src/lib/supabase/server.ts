@@ -8,13 +8,14 @@ import type { Database } from "@/types/database";
 
 export function isSupabaseConfigured() {
   return Boolean(
-    process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_SECRET_KEY,
+    isUsableSupabaseUrl(process.env.NEXT_PUBLIC_SUPABASE_URL) &&
+    process.env.SUPABASE_SECRET_KEY,
   );
 }
 
 export function isSupabaseAuthConfigured() {
   return Boolean(
-    process.env.NEXT_PUBLIC_SUPABASE_URL &&
+    isUsableSupabaseUrl(process.env.NEXT_PUBLIC_SUPABASE_URL) &&
     process.env.SUPABASE_PUBLISHABLE_KEY &&
     process.env.SUPABASE_SECRET_KEY,
   );
@@ -23,7 +24,7 @@ export function isSupabaseAuthConfigured() {
 export function createServerClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const secretKey = process.env.SUPABASE_SECRET_KEY;
-  if (!url || !secretKey) return null;
+  if (!isUsableSupabaseUrl(url) || !secretKey) return null;
 
   return createClient<Database>(url, secretKey, {
     auth: {
@@ -37,7 +38,7 @@ export function createServerClient() {
 export async function createAuthClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const publishableKey = process.env.SUPABASE_PUBLISHABLE_KEY;
-  if (!url || !publishableKey) return null;
+  if (!isUsableSupabaseUrl(url) || !publishableKey) return null;
 
   const cookieStore = await cookies();
 
@@ -91,6 +92,11 @@ export async function getAuthenticatedUser(): Promise<AuthenticatedAppUser | nul
   return appUser;
 }
 
+export async function requireAdminUser(): Promise<AuthenticatedAppUser | null> {
+  const user = await getAuthenticatedUser();
+  return user?.role === "admin" ? user : null;
+}
+
 export async function ensureAppUser({
   id,
   email,
@@ -129,4 +135,18 @@ export async function ensureAppUser({
 
 export function normalizeUserEmail(email: string) {
   return email.trim().toLowerCase();
+}
+
+function isUsableSupabaseUrl(url: string | undefined): url is string {
+  if (!url) return false;
+
+  try {
+    const supabaseUrl = new URL(url);
+    const appOrigin = process.env.NEXT_PUBLIC_APP_ORIGIN;
+    if (!appOrigin) return true;
+
+    return supabaseUrl.origin !== new URL(appOrigin).origin;
+  } catch {
+    return false;
+  }
 }

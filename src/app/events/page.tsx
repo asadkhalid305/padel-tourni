@@ -3,6 +3,7 @@ import Link from "next/link";
 
 import { Badge, Card, SectionHeading } from "@/components/ui";
 import { listEvents } from "@/lib/data";
+import { getAuthenticatedUser } from "@/lib/supabase/server";
 import { formatDate } from "@/lib/utils";
 
 export const metadata = { title: "Events" };
@@ -14,7 +15,11 @@ function eventTone(status: string) {
 }
 
 export default async function EventsPage() {
-  const events = await listEvents();
+  const [events, user] = await Promise.all([
+    listEvents(),
+    getAuthenticatedUser(),
+  ]);
+  const canManage = user?.role === "admin";
   return (
     <div className="space-y-7">
       <SectionHeading
@@ -22,12 +27,14 @@ export default async function EventsPage() {
         title="Events"
         description="Everything from first draw to final table, kept together."
         action={
-          <Link
-            href="/events/new"
-            className="inline-flex min-h-11 items-center rounded-xl bg-[var(--ink)] px-4 text-sm font-bold text-white"
-          >
-            Create event
-          </Link>
+          canManage ? (
+            <Link
+              href="/events/new"
+              className="inline-flex min-h-11 items-center rounded-xl bg-[var(--ink)] px-4 text-sm font-bold text-white"
+            >
+              Create event
+            </Link>
+          ) : null
         }
       />
       <div className="grid gap-4 lg:grid-cols-2 2xl:grid-cols-3">
@@ -72,7 +79,8 @@ export default async function EventsPage() {
               href={`/events/${event.id}`}
               className="mt-5 flex items-center justify-between rounded-xl bg-slate-50 px-4 py-3 text-sm font-black text-[var(--ink)] transition group-hover:bg-[var(--ink)] group-hover:text-white"
             >
-              Manage event <ArrowRight size={17} />
+              {canManage ? "Manage event" : "Open event"}{" "}
+              <ArrowRight size={17} />
             </Link>
           </Card>
         ))}

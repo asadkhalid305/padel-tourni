@@ -19,6 +19,7 @@ export function MatchTimer({
   startedAt,
   pausedAt,
   accumulatedPauseSeconds,
+  canManage,
 }: {
   matchId: string;
   eventId: string;
@@ -26,6 +27,7 @@ export function MatchTimer({
   startedAt: string | null;
   pausedAt: string | null;
   accumulatedPauseSeconds: number;
+  canManage: boolean;
 }) {
   const [now, setNow] = useState(() => new Date().toISOString());
   useEffect(() => {
@@ -61,25 +63,27 @@ export function MatchTimer({
           ? `+${clock(display.overtimeSeconds)}`
           : clock(display.remainingSeconds)}
       </p>
-      <form action={updateTimer} className="mt-3">
-        <input type="hidden" name="matchId" value={matchId} />
-        <input type="hidden" name="eventId" value={eventId} />
-        <input type="hidden" name="operation" value={operation} />
-        <button className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-white/10 text-sm font-bold hover:bg-white/15">
-          {!startedAt ? (
-            <Play size={17} />
-          ) : pausedAt ? (
-            <RotateCcw size={17} />
-          ) : (
-            <Pause size={17} />
-          )}
-          {!startedAt
-            ? "Start timer"
-            : pausedAt
-              ? "Resume timer"
-              : "Pause timer"}
-        </button>
-      </form>
+      {canManage ? (
+        <form action={updateTimer} className="mt-3">
+          <input type="hidden" name="matchId" value={matchId} />
+          <input type="hidden" name="eventId" value={eventId} />
+          <input type="hidden" name="operation" value={operation} />
+          <button className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-white/10 text-sm font-bold hover:bg-white/15">
+            {!startedAt ? (
+              <Play size={17} />
+            ) : pausedAt ? (
+              <RotateCcw size={17} />
+            ) : (
+              <Pause size={17} />
+            )}
+            {!startedAt
+              ? "Start timer"
+              : pausedAt
+                ? "Resume timer"
+                : "Pause timer"}
+          </button>
+        </form>
+      ) : null}
     </div>
   );
 }

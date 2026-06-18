@@ -33,6 +33,7 @@ export function AppShell({
 }) {
   const pathname = usePathname();
   const user = use(userPromise);
+  const isAdmin = user?.role === "admin";
 
   if (pathname === "/login") {
     return children;
@@ -75,13 +76,15 @@ export function AppShell({
             );
           })}
         </nav>
-        <Link
-          href="/events/new"
-          className="mt-6 flex min-h-12 items-center justify-center gap-2 rounded-xl bg-[var(--lime)] px-4 text-sm font-black text-[var(--ink)] transition hover:bg-[#c9f66d]"
-        >
-          <Plus size={18} />
-          New event
-        </Link>
+        {isAdmin ? (
+          <Link
+            href="/events/new"
+            className="mt-6 flex min-h-12 items-center justify-center gap-2 rounded-xl bg-[var(--lime)] px-4 text-sm font-black text-[var(--ink)] transition hover:bg-[#c9f66d]"
+          >
+            <Plus size={18} />
+            New event
+          </Link>
+        ) : null}
         <div className="mt-auto space-y-3">
           <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
             <p className="text-sm font-bold">Fair play first</p>
@@ -116,12 +119,14 @@ export function AppShell({
             {user?.email ?? "Recreational events, run beautifully."}
           </p>
           <div className="flex items-center gap-2">
-            <Link
-              href="/events/new"
-              className="rounded-xl bg-[var(--ink)] px-4 py-2.5 text-sm font-bold text-white"
-            >
-              New event
-            </Link>
+            {isAdmin ? (
+              <Link
+                href="/events/new"
+                className="rounded-xl bg-[var(--ink)] px-4 py-2.5 text-sm font-bold text-white"
+              >
+                New event
+              </Link>
+            ) : null}
             <form action={signOut}>
               <button
                 type="submit"

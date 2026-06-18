@@ -15,8 +15,10 @@ import { MatchTimer } from "@/components/match-timer";
 import { ScoreForm } from "@/components/score-form";
 import { Badge, Card } from "@/components/ui";
 import { diagnoseSchedule } from "@/domain/diagnostics";
+import { canEditDrawLineup } from "@/domain/draw-permissions";
 import type { ScheduledMatch } from "@/domain/types";
 import { getEvent, type EventMatch } from "@/lib/data";
+import { getAuthenticatedUser } from "@/lib/supabase/server";
 import { formatDate, initials } from "@/lib/utils";
 
 function statusTone(status: string) {
@@ -37,8 +39,12 @@ export default async function EventPage({
     params,
     searchParams,
   ]);
-  const event = await getEvent(id);
+  const [event, user] = await Promise.all([
+    getEvent(id),
+    getAuthenticatedUser(),
+  ]);
   if (!event) notFound();
+  const canManage = user?.role === "admin";
 
   const playerById = new Map(
     event.players.map((player) => [player.id, player]),
@@ -51,8 +57,6 @@ export default async function EventPage({
     event.completedMatches.map((match) => [match.id, match]),
   );
   const allMatches = event.schedule.rounds.flatMap((round) => round.matches);
-  const uuidPattern =
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
   const tabs = [
     { value: "overview", label: "Overview" },
@@ -236,9 +240,11 @@ export default async function EventPage({
                         playerIds={[...match.teamOne, ...match.teamTwo]}
                         players={event.players}
                         disabled={
-                          status === "completed" ||
-                          !uuidPattern.test(match.id) ||
-                          !uuidPattern.test(event.id)
+                          !canEditDrawLineup({
+                            canManage,
+                            eventStatus: event.status,
+                            matchStatus: status,
+                          })
                         }
                       />
                     </Card>
@@ -320,9 +326,12 @@ export default async function EventPage({
                         accumulatedPauseSeconds={
                           enriched.timerAccumulatedPauseSeconds ?? 0
                         }
+                        canManage={canManage}
                       />
                     </div>
-                    <ScoreForm matchId={match.id} eventId={event.id} />
+                    {canManage ? (
+                      <ScoreForm matchId={match.id} eventId={event.id} />
+                    ) : null}
                   </>
                 )}
               </Card>

@@ -14,7 +14,13 @@ type Player = {
   isActive: boolean;
 };
 
-export function PlayerManager({ players }: { players: Player[] }) {
+export function PlayerManager({
+  players,
+  canManage,
+}: {
+  players: Player[];
+  canManage: boolean;
+}) {
   const [editingId, setEditingId] = useState<string>();
   const editingPlayer = players.find((player) => player.id === editingId);
 
@@ -55,18 +61,20 @@ export function PlayerManager({ players }: { players: Player[] }) {
                     </Badge>
                   </div>
                 </div>
-                <div className="mt-3 flex items-start justify-end gap-2 border-t border-slate-100 pt-3">
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    onClick={() => setEditingId(player.id)}
-                    aria-label={`Edit ${player.name}`}
-                  >
-                    <Pencil size={15} />
-                    Edit
-                  </Button>
-                  <DeletePlayerButton player={player} />
-                </div>
+                {canManage ? (
+                  <div className="mt-3 flex items-start justify-end gap-2 border-t border-slate-100 pt-3">
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={() => setEditingId(player.id)}
+                      aria-label={`Edit ${player.name}`}
+                    >
+                      <Pencil size={15} />
+                      Edit
+                    </Button>
+                    <DeletePlayerButton player={player} />
+                  </div>
+                ) : null}
               </div>
             ))
           ) : (
@@ -76,11 +84,13 @@ export function PlayerManager({ players }: { players: Player[] }) {
           )}
         </div>
       </Card>
-      <PlayerForm
-        key={editingPlayer?.id ?? "new"}
-        player={editingPlayer}
-        onCancel={() => setEditingId(undefined)}
-      />
+      {canManage ? (
+        <PlayerForm
+          key={editingPlayer?.id ?? "new"}
+          player={editingPlayer}
+          onCancel={() => setEditingId(undefined)}
+        />
+      ) : null}
     </div>
   );
 }

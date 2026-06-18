@@ -51,11 +51,7 @@ export function MatchEditor({
         variant="ghost"
         disabled={disabled || pending}
       >
-        {disabled
-          ? "Completed match locked"
-          : pending
-            ? "Updating..."
-            : "Update draw"}
+        {disabled ? "Draw locked" : pending ? "Updating..." : "Update draw"}
       </Button>
       {state.message ? (
         <p

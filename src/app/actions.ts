@@ -4,11 +4,15 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { assertCanRegenerate } from "@/domain/consistency";
+import { canEditDrawLineup } from "@/domain/draw-permissions";
 import { calculateScheduleCapacity } from "@/domain/schedule-calculations";
 import type { ScheduleCapacity } from "@/domain/schedule-calculations";
 import { generateSchedule } from "@/domain/scheduler";
-import { createServerClient } from "@/lib/supabase/server";
-import { createAuthClient } from "@/lib/supabase/server";
+import {
+  createAuthClient,
+  createServerClient,
+  requireAdminUser,
+} from "@/lib/supabase/server";
 import { eventSchema, playerSchema, scoreSchema } from "@/lib/validation";
 
 export type ActionState = {
@@ -20,6 +24,16 @@ const unavailable: ActionState = {
   ok: false,
   message: "Connect Supabase to enable persistent changes.",
 };
+
+const forbidden: ActionState = {
+  ok: false,
+  message: "Only admins can make changes.",
+};
+
+async function assertAdminAction(): Promise<ActionState | null> {
+  const user = await requireAdminUser();
+  return user ? null : forbidden;
+}
 
 export async function signOut() {
   const authClient = await createAuthClient();
@@ -42,6 +56,8 @@ export async function savePlayer(
   if (!parsed.success) {
     return { ok: false, message: parsed.error.issues[0].message };
   }
+  const authorizationError = await assertAdminAction();
+  if (authorizationError) return authorizationError;
 
   const client = createServerClient();
   if (!client) return unavailable;
@@ -67,6 +83,8 @@ export async function deletePlayer(
   if (!parsed.success) {
     return { ok: false, message: "Choose a valid player to delete." };
   }
+  const authorizationError = await assertAdminAction();
+  if (authorizationError) return authorizationError;
 
   const client = createServerClient();
   if (!client) return unavailable;
@@ -111,6 +129,10 @@ export async function createEvent(formData: FormData) {
     redirect(
       `/events/new?error=${encodeURIComponent(parsed.error.issues[0].message)}`,
     );
+  }
+  const adminUser = await requireAdminUser();
+  if (!adminUser) {
+    redirect("/events?error=Only%20admins%20can%20create%20events");
   }
 
   const client = createServerClient();
@@ -251,6 +273,9 @@ export async function saveScore(
   if (!parsed.success) {
     return { ok: false, message: parsed.error.issues[0].message };
   }
+  const authorizationError = await assertAdminAction();
+  if (authorizationError) return authorizationError;
+
   const client = createServerClient();
   if (!client) return unavailable;
 
@@ -280,6 +305,9 @@ export async function saveScore(
 }
 
 export async function updateTimer(formData: FormData) {
+  const adminUser = await requireAdminUser();
+  if (!adminUser) return;
+
   const client = createServerClient();
   if (!client) return;
   const matchId = String(formData.get("matchId"));
@@ -338,6 +366,8 @@ export async function updateMatchLineup(
   ) {
     return { ok: false, message: "Choose four distinct players." };
   }
+  const authorizationError = await assertAdminAction();
+  if (authorizationError) return authorizationError;
 
   const client = createServerClient();
   if (!client) return unavailable;
@@ -348,8 +378,22 @@ export async function updateMatchLineup(
     .eq("event_id", eventId)
     .single();
   if (readError) return { ok: false, message: readError.message };
-  if (match.status === "completed") {
-    return { ok: false, message: "Completed matches are locked." };
+
+  const { data: event, error: eventError } = await client
+    .from("events")
+    .select("status")
+    .eq("id", eventId)
+    .single();
+  if (eventError) return { ok: false, message: eventError.message };
+
+  if (
+    !canEditDrawLineup({
+      canManage: true,
+      eventStatus: event.status,
+      matchStatus: match.status,
+    })
+  ) {
+    return { ok: false, message: "Completed draws are locked." };
   }
 
   const { data: validPlayers, error: playerError } = await client
@@ -376,6 +420,9 @@ export async function updateMatchLineup(
 }
 
 export async function regenerateEvent(formData: FormData) {
+  const adminUser = await requireAdminUser();
+  if (!adminUser) return;
+
   const client = createServerClient();
   if (!client) return;
   const eventId = String(formData.get("eventId"));

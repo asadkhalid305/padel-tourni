@@ -10,7 +10,7 @@
 
 ## Database
 
-Reusable `players` are snapshotted into `event_players`. Events own rounds, and rounds own matches. Matches reference four event-player IDs, enforce distinct participants, and store score and timer state. RLS is enabled on every public table; only the server secret role has access in this unauthenticated version.
+Reusable `players` are snapshotted into `event_players`. Events own rounds, and rounds own matches. Matches reference four event-player IDs, enforce distinct participants, and store score and timer state. RLS is enabled on every public table; only server-only data access has direct table access.
 
 ## Scheduling Boundary
 
@@ -18,12 +18,12 @@ The scheduler accepts stable player IDs, ratings, per-round court counts, and a 
 
 ## Server And Client
 
-Reads happen in server components through the data layer. Mutations use Zod-validated server actions. Client components are limited to form feedback, draw controls, and the ticking timer display. Secrets never enter client bundles.
+Reads happen in server components through the data layer. Mutations use Zod-validated server actions and require an authenticated `admin` app user. Client components are limited to form feedback, draw controls, and the ticking timer display. Secrets never enter client bundles.
 
 ## Timers And Standings
 
 Timer state persists timestamps and accumulated pause seconds; countdown and overtime are derived with pure functions. Standings are rebuilt from completed match records, using total points when match counts are equal and average points when they differ.
 
-## Future Authentication
+## Future Authorization
 
-Replace the current server-secret access with authenticated Supabase clients and ownership or membership policies. The existing RLS boundary, server actions, and repository layer keep that change localized.
+Replace the current server-secret table access with authenticated Supabase clients and ownership or membership policies when browser roles need direct database access. The existing RLS boundary, server actions, and repository layer keep that change localized.

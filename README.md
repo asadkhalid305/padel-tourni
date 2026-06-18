@@ -60,6 +60,37 @@ supabase gen types typescript --local --schema public > src/types/database.ts
 
 `supabase db reset` applies `supabase/migrations/` and the repeatable `supabase/seed.sql`. For a hosted project, link it and use the current CLI help before running `supabase db push`.
 
+### Local Google Auth
+
+Local Padeltour always runs on `http://localhost:3100`. `npm run dev` fails if that port is busy instead of silently falling back to another port, because OAuth redirect URLs must stay exact.
+
+Local Supabase can run the same Google OAuth flow as the hosted project. Create a Google OAuth **Web application** client and configure it with:
+
+- Authorized JavaScript origins:
+  - `http://localhost:3100`
+- Authorized redirect URI:
+  - the local Supabase auth callback from `supabase start`, for example `http://127.0.0.1:55321/auth/v1/callback`
+
+Then set these shell variables before starting Supabase:
+
+```bash
+export SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_ID="your-google-client-id"
+export SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_SECRET="your-google-client-secret"
+supabase stop
+supabase start
+```
+
+For local app testing, point `.env.local` at the local Supabase values printed by `supabase status --output env`:
+
+```bash
+NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:55321
+SUPABASE_PUBLISHABLE_KEY=sb_publishable_...
+SUPABASE_SECRET_KEY=sb_secret_...
+NEXT_PUBLIC_APP_ORIGIN=http://localhost:3100
+```
+
+Keep production and Vercel environment variables pointed at the hosted Supabase project.
+
 ## Quality Commands
 
 ```bash
@@ -92,6 +123,6 @@ curl -X POST http://localhost:3000/api/admin/users/revoke \
   -d '{"email":"organizer@example.com"}'
 ```
 
-Full RBAC is intentionally deferred; existing data access still runs through server-only actions using the Supabase secret key, with RLS enabled and browser roles denied.
+RBAC is enforced in server-only actions. Admin users can create, update, delete, score, and run timers; member users can sign in and read Players, History, and existing events. Data access still runs through server-only code using the Supabase secret key, with RLS enabled and browser roles denied.
 
 GitHub: [asadkhalid305/padeltour](https://github.com/asadkhalid305/padeltour)
