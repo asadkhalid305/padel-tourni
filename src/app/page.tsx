@@ -7,11 +7,18 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 
+import { AccessLimited } from "@/components/access-limited";
 import { Badge, Card, SectionHeading } from "@/components/ui";
-import { listEvents, listPlayers } from "@/lib/data";
+import { canViewPrivateData, listEvents, listPlayers } from "@/lib/data";
+import { getAuthenticatedUser } from "@/lib/supabase/server";
 import { formatDate } from "@/lib/utils";
 
 export default async function DashboardPage() {
+  const user = await getAuthenticatedUser();
+  if (!(await canViewPrivateData(user))) {
+    return <AccessLimited />;
+  }
+
   const [players, events] = await Promise.all([listPlayers(), listEvents()]);
   const liveEvents = events.filter((event) => event.status === "live");
   const completedMatches = events.reduce(

@@ -17,10 +17,19 @@ import type { Database } from "@/types/database";
 type PlayerRecord = {
   id: string;
   name: string;
+  appUserId: string | null;
   accountEmail: string | null;
+  accountDisplayName: string | null;
   accountRole: AppUserRole | null;
   rating: number;
   isActive: boolean;
+};
+
+export type LinkableAppUser = {
+  id: string;
+  email: string;
+  displayName: string;
+  role: AppUserRole;
 };
 
 type EventSummary = {
@@ -56,13 +65,26 @@ type MatchRow = Database["public"]["Tables"]["matches"]["Row"];
 type RoundWithMatches = Database["public"]["Tables"]["event_rounds"]["Row"] & {
   matches: MatchRow[];
 };
+type PlayerReadRow = Pick<
+  Database["public"]["Tables"]["players"]["Row"],
+  "id" | "name" | "account_email" | "rating" | "is_active"
+> & {
+  app_user_id: string | null;
+};
+type PlayerLinkRow = {
+  id: string;
+  app_user_id: string | null;
+  account_email: string | null;
+};
 
 export async function listPlayers(): Promise<PlayerRecord[]> {
   const client = createServerClient();
   if (!client) {
     return demoPlayers.map((player) => ({
       ...player,
+      appUserId: null,
       accountEmail: null,
+      accountDisplayName: null,
       accountRole: null,
       isActive: true,
     }));
@@ -70,34 +92,160 @@ export async function listPlayers(): Promise<PlayerRecord[]> {
 
   const { data, error } = await client
     .from("players")
-    .select("id,name,account_email,rating,is_active")
+    .select("id,name,app_user_id,account_email,rating,is_active")
     .order("is_active", { ascending: false })
     .order("name");
-  if (error) throw error;
-
-  const emails = data
-    .map((player) => player.account_email)
-    .filter((email): email is string => Boolean(email));
-  const roleByEmail = new Map<string, AppUserRole>();
-  if (emails.length) {
-    const { data: users, error: usersError } = await client
-      .from("app_users")
-      .select("email,role")
-      .in("email", emails);
-    if (usersError) throw usersError;
-    users.forEach((user) => roleByEmail.set(user.email, user.role));
+  let players: PlayerReadRow[];
+  if (isUndefinedColumnError(error)) {
+    const { data: fallbackData, error: fallbackError } = await client
+      .from("players")
+      .select("id,name,account_email,rating,is_active")
+      .order("is_active", { ascending: false })
+      .order("name");
+    if (fallbackError) throw fallbackError;
+    players = fallbackData.map((player) => ({
+      ...player,
+      app_user_id: null,
+    }));
+  } else {
+    if (error) throw error;
+    players = data;
   }
 
-  return data.map((player) => ({
-    id: player.id,
-    name: player.name,
-    accountEmail: player.account_email,
-    accountRole: player.account_email
-      ? (roleByEmail.get(player.account_email) ?? null)
-      : null,
-    rating: Number(player.rating),
-    isActive: player.is_active,
-  }));
+  const appUserIds = players
+    .map((player) => player.app_user_id)
+    .filter((id): id is string => Boolean(id));
+  const accountEmails = players
+    .map((player) => player.account_email)
+    .filter((email): email is string => Boolean(email));
+  const userById = new Map<string, LinkableAppUser>();
+  const userByEmail = new Map<string, LinkableAppUser>();
+  if (appUserIds.length || accountEmails.length) {
+    const { data: users, error: usersError } = await client
+      .from("app_users")
+      .select("id,email,display_name,role")
+      .or(
+        [
+          appUserIds.length ? `id.in.(${appUserIds.join(",")})` : null,
+          accountEmails.length ? `email.in.(${accountEmails.join(",")})` : null,
+        ]
+          .filter((clause): clause is string => Boolean(clause))
+          .join(","),
+      );
+    if (usersError) throw usersError;
+    users.forEach((user) => {
+      const appUser = {
+        id: user.id,
+        email: user.email,
+        displayName: user.display_name,
+        role: user.role,
+      };
+      userById.set(user.id, appUser);
+      userByEmail.set(user.email, appUser);
+    });
+  }
+
+  return players.map((player) => {
+    const linkedUser =
+      userById.get(player.app_user_id ?? "") ??
+      userByEmail.get(player.account_email ?? "");
+    return {
+      id: player.id,
+      name: player.name,
+      appUserId: player.app_user_id ?? linkedUser?.id ?? null,
+      accountEmail: linkedUser?.email ?? player.account_email,
+      accountDisplayName: linkedUser?.displayName ?? null,
+      accountRole: linkedUser?.role ?? null,
+      rating: Number(player.rating),
+      isActive: player.is_active,
+    };
+  });
+}
+
+export async function listLinkableAppUsers(
+  currentPlayerId?: string,
+): Promise<LinkableAppUser[]> {
+  const client = createServerClient();
+  if (!client) return [];
+
+  const [{ data: users, error: usersError }, linkedResult] = await Promise.all([
+    client
+      .from("app_users")
+      .select("id,email,display_name,role")
+      .order("email"),
+    client
+      .from("players")
+      .select("id,app_user_id")
+      .not("app_user_id", "is", null),
+  ]);
+  if (usersError) throw usersError;
+  let linked: PlayerLinkRow[];
+  if (isUndefinedColumnError(linkedResult.error)) {
+    const { data: fallbackLinked, error: fallbackLinkError } = await client
+      .from("players")
+      .select("id,account_email")
+      .not("account_email", "is", null);
+    if (fallbackLinkError) throw fallbackLinkError;
+    linked = fallbackLinked.map((player) => ({
+      ...player,
+      app_user_id:
+        users.find((user) => user.email === player.account_email)?.id ?? null,
+    }));
+  } else {
+    if (linkedResult.error) throw linkedResult.error;
+    linked = linkedResult.data.map((player) => ({
+      ...player,
+      account_email: null,
+    }));
+  }
+
+  const linkedIds = new Set(
+    linked
+      .filter((player) => player.id !== currentPlayerId)
+      .map((player) => player.app_user_id)
+      .filter((id): id is string => Boolean(id)),
+  );
+
+  return users
+    .filter((user) => !linkedIds.has(user.id))
+    .map((user) => ({
+      id: user.id,
+      email: user.email,
+      displayName: user.display_name,
+      role: user.role,
+    }));
+}
+
+export async function canViewPrivateData(
+  user: { id: string; email?: string; role: AppUserRole } | null,
+) {
+  const client = createServerClient();
+  if (!client) return true;
+  if (!user) return false;
+  if (user.role === "admin" || user.role === "super_admin") return true;
+
+  const { data, error } = await client
+    .from("players")
+    .select("id")
+    .eq("app_user_id", user.id)
+    .maybeSingle();
+  if (isUndefinedColumnError(error) && user.email) {
+    const { data: fallbackData, error: fallbackError } = await client
+      .from("players")
+      .select("id")
+      .eq("account_email", user.email)
+      .maybeSingle();
+    if (fallbackError) throw fallbackError;
+
+    return Boolean(fallbackData);
+  }
+  if (error) throw error;
+
+  return Boolean(data);
+}
+
+function isUndefinedColumnError(error: { code?: string } | null) {
+  return error?.code === "42703";
 }
 
 export async function listEvents(): Promise<EventSummary[]> {

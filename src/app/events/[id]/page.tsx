@@ -11,6 +11,7 @@ import {
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { AccessLimited } from "@/components/access-limited";
 import { MatchEditor } from "@/components/match-editor";
 import { MatchTimer } from "@/components/match-timer";
 import { ScoreForm } from "@/components/score-form";
@@ -18,7 +19,8 @@ import { Badge, Card } from "@/components/ui";
 import { diagnoseSchedule } from "@/domain/diagnostics";
 import { canEditDrawLineup } from "@/domain/draw-permissions";
 import type { ScheduledMatch } from "@/domain/types";
-import { getEvent, type EventMatch } from "@/lib/data";
+import { canViewPrivateData, getEvent, type EventMatch } from "@/lib/data";
+import { isAdminRole } from "@/lib/roles";
 import { getAuthenticatedUser } from "@/lib/supabase/server";
 import { formatDate, initials } from "@/lib/utils";
 
@@ -52,12 +54,14 @@ export default async function EventPage({
     params,
     searchParams,
   ]);
-  const [event, user] = await Promise.all([
-    getEvent(id),
-    getAuthenticatedUser(),
-  ]);
+  const user = await getAuthenticatedUser();
+  if (!(await canViewPrivateData(user))) {
+    return <AccessLimited />;
+  }
+
+  const event = await getEvent(id);
   if (!event) notFound();
-  const canManage = user?.role === "admin";
+  const canManage = user ? isAdminRole(user.role) : false;
 
   const playerById = new Map(
     event.players.map((player) => [player.id, player]),

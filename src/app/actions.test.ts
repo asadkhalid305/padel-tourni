@@ -7,7 +7,7 @@ const supabaseMocks = vi.hoisted(() => ({
 }));
 
 const adminMocks = vi.hoisted(() => ({
-  setAdminRoleForEmail: vi.fn(),
+  setAppUserRole: vi.fn(),
 }));
 
 vi.mock("next/cache", () => ({
@@ -27,9 +27,16 @@ vi.mock("@/lib/supabase/server", () => ({
   requireSuperAdminUser: supabaseMocks.requireSuperAdminUser,
 }));
 
-vi.mock("@/lib/auth-admin", () => ({
-  setAdminRoleForEmail: adminMocks.setAdminRoleForEmail,
-}));
+vi.mock("@/lib/auth-admin", async () => {
+  const actual =
+    await vi.importActual<typeof import("@/lib/auth-admin")>(
+      "@/lib/auth-admin",
+    );
+  return {
+    ...actual,
+    setAppUserRole: adminMocks.setAppUserRole,
+  };
+});
 
 import { savePlayer, setPlayerAdminRole } from "@/app/actions";
 
@@ -38,7 +45,7 @@ describe("RBAC server actions", () => {
     supabaseMocks.createServerClient.mockReset();
     supabaseMocks.requireAdminUser.mockReset();
     supabaseMocks.requireSuperAdminUser.mockReset();
-    adminMocks.setAdminRoleForEmail.mockReset();
+    adminMocks.setAppUserRole.mockReset();
   });
 
   it("blocks member users before player mutations reach Supabase", async () => {
@@ -64,7 +71,7 @@ describe("RBAC server actions", () => {
       displayName: "Asad",
       role: "super_admin",
     });
-    adminMocks.setAdminRoleForEmail.mockResolvedValue({
+    adminMocks.setAppUserRole.mockResolvedValue({
       ok: true,
       user: {
         id: "admin-user",
@@ -73,18 +80,18 @@ describe("RBAC server actions", () => {
       },
     });
     const formData = new FormData();
-    formData.set("email", "organizer@example.com");
-    formData.set("isAdmin", "false");
+    formData.set("appUserId", "00000000-0000-4000-8000-000000000001");
+    formData.set("role", "member");
 
     const result = await setPlayerAdminRole(
       { ok: false, message: "" },
       formData,
     );
 
-    expect(adminMocks.setAdminRoleForEmail).toHaveBeenCalledWith(
-      "organizer@example.com",
-      false,
+    expect(adminMocks.setAppUserRole).toHaveBeenCalledWith(
+      "00000000-0000-4000-8000-000000000001",
+      "member",
     );
-    expect(result).toEqual({ ok: true, message: "Admin revoked." });
+    expect(result).toEqual({ ok: true, message: "Role updated to member." });
   });
 });

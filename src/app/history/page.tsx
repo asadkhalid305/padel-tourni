@@ -1,12 +1,23 @@
 import { Medal, TrendingUp, Trophy } from "lucide-react";
 
+import { AccessLimited } from "@/components/access-limited";
 import { Card, SectionHeading } from "@/components/ui";
-import { getHistoricalPlayerStats, listEvents } from "@/lib/data";
+import {
+  canViewPrivateData,
+  getHistoricalPlayerStats,
+  listEvents,
+} from "@/lib/data";
+import { getAuthenticatedUser } from "@/lib/supabase/server";
 import { formatDate } from "@/lib/utils";
 
 export const metadata = { title: "History" };
 
 export default async function HistoryPage() {
+  const user = await getAuthenticatedUser();
+  if (!(await canViewPrivateData(user))) {
+    return <AccessLimited />;
+  }
+
   const [players, events] = await Promise.all([
     getHistoricalPlayerStats(),
     listEvents(),

@@ -10,6 +10,12 @@ export const playerSchema = z.object({
   id: z.string().uuid().optional(),
   name: z.string().trim().min(2).max(80),
   accountEmail: optionalEmailSchema,
+  appUserId: z
+    .preprocess(
+      (value) => (value === "" ? null : value),
+      z.string().uuid().nullable(),
+    )
+    .default(null),
   rating: z.coerce.number().min(1).max(10),
   isActive: z.coerce.boolean().default(true),
 });

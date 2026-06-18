@@ -44,6 +44,7 @@ export type Database = {
           id: string;
           name: string;
           account_email: string | null;
+          app_user_id: string | null;
           rating: number;
           is_active: boolean;
           created_at: string;
@@ -53,6 +54,7 @@ export type Database = {
           id?: string;
           name: string;
           account_email?: string | null;
+          app_user_id?: string | null;
           rating?: number;
           is_active?: boolean;
           created_at?: string;
@@ -62,12 +64,21 @@ export type Database = {
           id?: string;
           name?: string;
           account_email?: string | null;
+          app_user_id?: string | null;
           rating?: number;
           is_active?: boolean;
           created_at?: string;
           updated_at?: string;
         };
-        Relationships: [];
+        Relationships: [
+          {
+            foreignKeyName: "players_app_user_id_fkey";
+            columns: ["app_user_id"];
+            isOneToOne: true;
+            referencedRelation: "app_users";
+            referencedColumns: ["id"];
+          },
+        ];
       };
       events: {
         Row: {

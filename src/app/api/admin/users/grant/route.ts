@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import {
   adminRoleRequestSchema,
   isAdminRoleRequestAuthorized,
-  setAdminRoleForEmail,
+  setAppUserRoleByEmail,
 } from "@/lib/auth-admin";
 
 export async function POST(request: Request) {
@@ -19,7 +19,10 @@ export async function POST(request: Request) {
     );
   }
 
-  const result = await setAdminRoleForEmail(parsed.data.email, true);
+  const result = await setAppUserRoleByEmail(
+    parsed.data.email,
+    parsed.data.role,
+  );
   if (!result.ok) {
     return NextResponse.json(
       { error: result.message },

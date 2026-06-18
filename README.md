@@ -5,6 +5,7 @@ Padel Tour is a recreational event-management app for reusable player rosters, f
 ## Features
 
 - Reusable players with 1-10 ratings
+- Admin-controlled links between roster players and signed-in accounts
 - Event-level name and rating snapshots
 - Deterministic schedules with unequal court availability
 - Fairness diagnostics for appearances, rests, partners, opponents, and ratings
@@ -109,7 +110,9 @@ The official Context7 endpoint is configured in `.codex/config.toml`. Codex load
 
 Deploy as a standard Next.js application and configure the three Supabase environment variables in the hosting platform. Database migrations must be applied before the first production request.
 
-Users sign in with Google through Supabase Auth. First-time sign-in creates a `member` account in `public.app_users`; administrators can grant or revoke the `admin` role through the server-only admin endpoints:
+Users sign in with Google through Supabase Auth. First-time sign-in creates a `member` account in `public.app_users` but does not create or expose a roster player. Admins create roster players separately, then link a player to a signed-in account from the Players screen. Unlinked non-admin accounts cannot view private roster, event, or history data.
+
+Super admins can manage `member`, `admin`, and `super_admin` roles from linked player accounts. The secret-protected endpoints remain available for server-only role bootstrap and automation:
 
 ```bash
 curl -X POST http://localhost:3000/api/admin/users/grant \
@@ -117,12 +120,17 @@ curl -X POST http://localhost:3000/api/admin/users/grant \
   -H "x-admin-role-secret: $ADMIN_ROLE_API_SECRET" \
   -d '{"email":"organizer@example.com"}'
 
+curl -X POST http://localhost:3000/api/admin/users/grant \
+  -H "content-type: application/json" \
+  -H "x-admin-role-secret: $ADMIN_ROLE_API_SECRET" \
+  -d '{"email":"owner@example.com","role":"super_admin"}'
+
 curl -X POST http://localhost:3000/api/admin/users/revoke \
   -H "content-type: application/json" \
   -H "x-admin-role-secret: $ADMIN_ROLE_API_SECRET" \
   -d '{"email":"organizer@example.com"}'
 ```
 
-RBAC is enforced in server-only actions. Admin users can create, update, delete, score, and run timers; member users can sign in and read Players, History, and existing events. Data access still runs through server-only code using the Supabase secret key, with RLS enabled and browser roles denied.
+RBAC is enforced in server-only actions. Admin and super-admin users can create, update, delete, score, and run timers; super admins can grant or revoke elevated roles without removing the final remaining super admin. Linked member users can read Players, History, and existing events. Data access still runs through server-only code using the Supabase secret key, with RLS enabled and browser roles denied.
 
 GitHub: [asadkhalid305/padeltour](https://github.com/asadkhalid305/padeltour)

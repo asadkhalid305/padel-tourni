@@ -12,6 +12,7 @@ vi.mock("@/lib/supabase/server", () => ({
 import {
   adminRoleRequestSchema,
   isAdminRoleRequestAuthorized,
+  setAppUserRole,
   setAdminRoleForEmail,
 } from "@/lib/auth-admin";
 
@@ -49,14 +50,16 @@ describe("admin role management", () => {
     vi.unstubAllEnvs();
   });
 
-  it("refuses to demote a super admin account", async () => {
+  it("refuses to demote the last super admin account", async () => {
     const update = vi.fn();
     mockAppUsersClient({
-      readUser: {
-        id: "user-1",
-        email: "asadkhalid305@gmail.com",
-        role: "super_admin",
-      },
+      users: [
+        {
+          id: "user-1",
+          email: "asadkhalid305@gmail.com",
+          role: "super_admin",
+        },
+      ],
       update,
     });
 
@@ -65,9 +68,53 @@ describe("admin role management", () => {
     expect(result).toEqual({
       ok: false,
       status: 403,
-      message: "Super admin accounts cannot be demoted.",
+      message: "At least one super admin account must remain.",
     });
     expect(update).not.toHaveBeenCalled();
+  });
+
+  it("allows one super admin to demote another super admin", async () => {
+    const update = vi.fn(() => ({
+      eq: vi.fn(() => ({
+        select: vi.fn(() => ({
+          single: vi.fn().mockResolvedValue({
+            data: {
+              id: "user-1",
+              email: "organizer@example.com",
+              role: "admin",
+            },
+            error: null,
+          }),
+        })),
+      })),
+    }));
+    mockAppUsersClient({
+      users: [
+        {
+          id: "user-1",
+          email: "organizer@example.com",
+          role: "super_admin",
+        },
+        {
+          id: "user-2",
+          email: "owner@example.com",
+          role: "super_admin",
+        },
+      ],
+      update,
+    });
+
+    const result = await setAppUserRole("user-1", "admin");
+
+    expect(update).toHaveBeenCalledWith({ role: "admin" });
+    expect(result).toEqual({
+      ok: true,
+      user: {
+        id: "user-1",
+        email: "organizer@example.com",
+        role: "admin",
+      },
+    });
   });
 
   it("updates a member account to admin", async () => {
@@ -86,11 +133,13 @@ describe("admin role management", () => {
       })),
     }));
     mockAppUsersClient({
-      readUser: {
-        id: "user-2",
-        email: "organizer@example.com",
-        role: "member",
-      },
+      users: [
+        {
+          id: "user-2",
+          email: "organizer@example.com",
+          role: "member",
+        },
+      ],
       update,
     });
 
@@ -109,21 +158,41 @@ describe("admin role management", () => {
 });
 
 function mockAppUsersClient({
-  readUser,
+  users,
   update = vi.fn(),
 }: {
-  readUser: { id: string; email: string; role: string } | null;
+  users: { id: string; email: string; role: string }[];
   update?: ReturnType<typeof vi.fn>;
 }) {
+  const findByField = (field: string, value: string) =>
+    users.find(
+      (user) => user[field as keyof (typeof users)[number]] === value,
+    ) ?? null;
+
   supabaseMocks.createServerClient.mockReturnValue({
     from: vi.fn(() => ({
-      select: vi.fn(() => ({
-        eq: vi.fn(() => ({
-          maybeSingle: vi.fn().mockResolvedValue({
-            data: readUser,
-            error: null,
-          }),
-        })),
+      select: vi.fn((_columns: string, options?: { count?: "exact" }) => ({
+        eq: vi.fn((field: string, value: string) => {
+          if (options?.count === "exact") {
+            return {
+              neq: vi.fn((_neqField: string, neqValue: string) =>
+                Promise.resolve({
+                  count: users.filter(
+                    (user) => user.role === value && user.id !== neqValue,
+                  ).length,
+                  error: null,
+                }),
+              ),
+            };
+          }
+
+          return {
+            maybeSingle: vi.fn().mockResolvedValue({
+              data: findByField(field, value),
+              error: null,
+            }),
+          };
+        }),
       })),
       update,
     })),

@@ -4,6 +4,7 @@ import { createEvent } from "@/app/actions";
 import { EventAvailabilityFields } from "@/components/event-availability-fields";
 import { Button, Card, SectionHeading } from "@/components/ui";
 import { listPlayers } from "@/lib/data";
+import { isAdminRole } from "@/lib/roles";
 import {
   getAuthenticatedUser,
   isSupabaseConfigured,
@@ -22,7 +23,7 @@ export default async function NewEventPage({
     searchParams,
     getAuthenticatedUser(),
   ]);
-  if (user?.role !== "admin") {
+  if (!user || !isAdminRole(user.role)) {
     redirect("/events");
   }
   const activePlayers = players.filter((player) => player.isActive);

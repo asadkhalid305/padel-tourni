@@ -12,3 +12,7 @@ export function isAdminRole(role: AppUserRole) {
 export function isSuperAdminRole(role: AppUserRole) {
   return role === "super_admin";
 }
+
+export function roleLabel(role: AppUserRole) {
+  return role.replace("_", " ");
+}

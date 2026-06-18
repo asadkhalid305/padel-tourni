@@ -15,7 +15,7 @@ import {
   requireAdminUser,
   requireSuperAdminUser,
 } from "@/lib/supabase/server";
-import { setAdminRoleForEmail } from "@/lib/auth-admin";
+import { appUserRoleSchema, setAppUserRole } from "@/lib/auth-admin";
 import { eventSchema, playerSchema, scoreSchema } from "@/lib/validation";
 
 export type ActionState = {
@@ -34,8 +34,8 @@ const forbidden: ActionState = {
 };
 
 const roleChangeSchema = z.object({
-  email: z.string().email(),
-  isAdmin: z.enum(["true", "false"]).transform((value) => value === "true"),
+  appUserId: z.string().uuid(),
+  role: appUserRoleSchema,
 });
 
 async function assertAdminAction(): Promise<ActionState | null> {
@@ -59,6 +59,7 @@ export async function savePlayer(
     id: formData.get("id") || undefined,
     name: formData.get("name"),
     accountEmail: formData.get("accountEmail"),
+    appUserId: formData.get("appUserId"),
     rating: formData.get("rating"),
     isActive: formData.getAll("isActive").includes("true"),
   });
@@ -70,16 +71,45 @@ export async function savePlayer(
 
   const client = createServerClient();
   if (!client) return unavailable;
+  let accountEmail = parsed.data.accountEmail;
+  if (parsed.data.appUserId) {
+    const { data: appUser, error: appUserError } = await client
+      .from("app_users")
+      .select("email")
+      .eq("id", parsed.data.appUserId)
+      .single();
+    if (appUserError) return { ok: false, message: appUserError.message };
+    accountEmail = appUser.email;
+  }
   const payload = {
     name: parsed.data.name,
-    account_email: parsed.data.accountEmail,
+    app_user_id: parsed.data.appUserId,
+    account_email: accountEmail,
     rating: parsed.data.rating,
     is_active: parsed.data.isActive,
   };
   const result = parsed.data.id
     ? await client.from("players").update(payload).eq("id", parsed.data.id)
     : await client.from("players").insert(payload);
-  if (result.error) return { ok: false, message: result.error.message };
+  if (isUndefinedColumnError(result.error)) {
+    const fallbackPayload = {
+      name: payload.name,
+      account_email: payload.account_email,
+      rating: payload.rating,
+      is_active: payload.is_active,
+    };
+    const fallbackResult = parsed.data.id
+      ? await client
+          .from("players")
+          .update(fallbackPayload)
+          .eq("id", parsed.data.id)
+      : await client.from("players").insert(fallbackPayload);
+    if (fallbackResult.error) {
+      return { ok: false, message: fallbackResult.error.message };
+    }
+  } else if (result.error) {
+    return { ok: false, message: result.error.message };
+  }
   revalidatePath("/players");
   revalidatePath("/");
   return { ok: true, message: "Player saved." };
@@ -128,8 +158,8 @@ export async function setPlayerAdminRole(
   formData: FormData,
 ): Promise<ActionState> {
   const parsed = roleChangeSchema.safeParse({
-    email: formData.get("email"),
-    isAdmin: formData.get("isAdmin"),
+    appUserId: formData.get("appUserId"),
+    role: formData.get("role"),
   });
   if (!parsed.success) {
     return { ok: false, message: parsed.error.issues[0].message };
@@ -139,14 +169,11 @@ export async function setPlayerAdminRole(
   if (!superAdminUser) {
     return {
       ok: false,
-      message: "Only the super admin can change admin roles.",
+      message: "Only super admins can change account roles.",
     };
   }
 
-  const result = await setAdminRoleForEmail(
-    parsed.data.email,
-    parsed.data.isAdmin,
-  );
+  const result = await setAppUserRole(parsed.data.appUserId, parsed.data.role);
   if (!result.ok) {
     return { ok: false, message: result.message };
   }
@@ -154,7 +181,7 @@ export async function setPlayerAdminRole(
   revalidatePath("/players");
   return {
     ok: true,
-    message: parsed.data.isAdmin ? "Admin granted." : "Admin revoked.",
+    message: `Role updated to ${parsed.data.role.replace("_", " ")}.`,
   };
 }
 
@@ -476,4 +503,8 @@ export async function regenerateEvent(formData: FormData) {
     .select("status")
     .eq("event_id", eventId);
   assertCanRegenerate(matches?.map((match) => match.status) ?? []);
+}
+
+function isUndefinedColumnError(error: { code?: string } | null) {
+  return error?.code === "42703";
 }

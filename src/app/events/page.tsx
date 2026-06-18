@@ -1,8 +1,10 @@
 import { ArrowRight, Calendar, MapPin, Users } from "lucide-react";
 import Link from "next/link";
 
+import { AccessLimited } from "@/components/access-limited";
 import { Badge, Card, SectionHeading } from "@/components/ui";
-import { listEvents } from "@/lib/data";
+import { canViewPrivateData, listEvents } from "@/lib/data";
+import { isAdminRole } from "@/lib/roles";
 import { getAuthenticatedUser } from "@/lib/supabase/server";
 import { formatDate } from "@/lib/utils";
 
@@ -15,11 +17,13 @@ function eventTone(status: string) {
 }
 
 export default async function EventsPage() {
-  const [events, user] = await Promise.all([
-    listEvents(),
-    getAuthenticatedUser(),
-  ]);
-  const canManage = user?.role === "admin";
+  const user = await getAuthenticatedUser();
+  if (!(await canViewPrivateData(user))) {
+    return <AccessLimited />;
+  }
+
+  const events = await listEvents();
+  const canManage = user ? isAdminRole(user.role) : false;
   return (
     <div className="space-y-7">
       <SectionHeading

@@ -10,7 +10,7 @@
 
 ## Database
 
-Reusable `players` are snapshotted into `event_players`. Events own rounds, and rounds own matches. Matches reference four event-player IDs, enforce distinct participants, and store score and timer state. RLS is enabled on every public table; only server-only data access has direct table access.
+Reusable `players` are snapshotted into `event_players`. A player may link to one signed-in `app_users` row through `players.app_user_id`; that link is the source of truth for account role display, while `account_email` remains a pending-invite/display helper. Events own rounds, and rounds own matches. Matches reference four event-player IDs, enforce distinct participants, and store score and timer state. RLS is enabled on every public table; only server-only data access has direct table access.
 
 ## Scheduling Boundary
 
@@ -18,7 +18,7 @@ The scheduler accepts stable player IDs, ratings, per-round court counts, and a 
 
 ## Server And Client
 
-Reads happen in server components through the data layer. Mutations use Zod-validated server actions and require an authenticated `admin` app user. Client components are limited to form feedback, draw controls, and the ticking timer display. Secrets never enter client bundles.
+Reads happen in server components through the data layer. Private roster, event, and history reads require either an admin role or a linked roster player, so first-time member accounts do not see group data until an admin links them. Mutations use Zod-validated server actions and require an authenticated admin role; role-management actions require `super_admin` and preserve at least one remaining super admin. Client components are limited to form feedback, draw controls, and the ticking timer display. Secrets never enter client bundles.
 
 ## Timers And Standings
 

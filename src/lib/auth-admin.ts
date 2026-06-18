@@ -2,7 +2,7 @@ import "server-only";
 
 import { z } from "zod";
 
-import { isSuperAdminRole } from "@/lib/roles";
+import { isSuperAdminRole, type AppUserRole } from "@/lib/roles";
 import { createServerClient, normalizeUserEmail } from "@/lib/supabase/server";
 
 export const adminRoleRequestSchema = z.object({
@@ -10,7 +10,10 @@ export const adminRoleRequestSchema = z.object({
     (value) => (typeof value === "string" ? normalizeUserEmail(value) : value),
     z.string().email(),
   ),
+  role: z.enum(["admin", "super_admin"]).default("admin"),
 });
+
+export const appUserRoleSchema = z.enum(["member", "admin", "super_admin"]);
 
 export function isAdminRoleRequestAuthorized(request: Request) {
   const configuredSecret = process.env.ADMIN_ROLE_API_SECRET;
@@ -20,6 +23,10 @@ export function isAdminRoleRequestAuthorized(request: Request) {
 }
 
 export async function setAdminRoleForEmail(email: string, isAdmin: boolean) {
+  return setAppUserRoleByEmail(email, isAdmin ? "admin" : "member");
+}
+
+export async function setAppUserRoleByEmail(email: string, role: AppUserRole) {
   const client = createServerClient();
   if (!client) {
     return {
@@ -46,20 +53,54 @@ export async function setAdminRoleForEmail(email: string, isAdmin: boolean) {
       message: "No account exists for that email address.",
     };
   }
-  if (isSuperAdminRole(existing.role)) {
-    if (!isAdmin) {
-      return {
-        ok: false as const,
-        status: 403,
-        message: "Super admin accounts cannot be demoted.",
-      };
-    }
+
+  return setAppUserRole(existing.id, role);
+}
+
+export async function setAppUserRole(id: string, role: AppUserRole) {
+  const client = createServerClient();
+  if (!client) {
+    return {
+      ok: false as const,
+      status: 503,
+      message: "Supabase is not configured.",
+    };
+  }
+
+  const { data: existing, error: readError } = await client
+    .from("app_users")
+    .select("id,email,role")
+    .eq("id", id)
+    .maybeSingle();
+
+  if (readError) {
+    return { ok: false as const, status: 500, message: readError.message };
+  }
+  if (!existing) {
+    return {
+      ok: false as const,
+      status: 404,
+      message: "No account exists for that user.",
+    };
+  }
+  if (
+    isSuperAdminRole(existing.role) &&
+    !isSuperAdminRole(role) &&
+    (await wouldRemoveLastSuperAdmin(existing.id))
+  ) {
+    return {
+      ok: false as const,
+      status: 403,
+      message: "At least one super admin account must remain.",
+    };
+  }
+  if (existing.role === role) {
     return { ok: true as const, user: existing };
   }
 
   const { data, error } = await client
     .from("app_users")
-    .update({ role: isAdmin ? "admin" : "member" })
+    .update({ role })
     .eq("id", existing.id)
     .select("id,email,role")
     .single();
@@ -69,4 +110,18 @@ export async function setAdminRoleForEmail(email: string, isAdmin: boolean) {
   }
 
   return { ok: true as const, user: data };
+}
+
+async function wouldRemoveLastSuperAdmin(id: string) {
+  const client = createServerClient();
+  if (!client) return true;
+
+  const { count, error } = await client
+    .from("app_users")
+    .select("id", { count: "exact", head: true })
+    .eq("role", "super_admin")
+    .neq("id", id);
+  if (error) throw error;
+
+  return (count ?? 0) === 0;
 }

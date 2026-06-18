@@ -16,13 +16,17 @@ import {
   PlayerForm,
 } from "@/components/player-form";
 import { Badge, Button, Card } from "@/components/ui";
+import type { LinkableAppUser } from "@/lib/data";
 import type { AppUserRole } from "@/lib/roles";
+import { roleLabel } from "@/lib/roles";
 import { initials } from "@/lib/utils";
 
 type Player = {
   id: string;
   name: string;
+  appUserId: string | null;
   accountEmail: string | null;
+  accountDisplayName: string | null;
   accountRole: AppUserRole | null;
   rating: number;
   isActive: boolean;
@@ -32,13 +36,29 @@ export function PlayerManager({
   players,
   canManage,
   canManageRoles,
+  linkableUsers,
 }: {
   players: Player[];
   canManage: boolean;
   canManageRoles: boolean;
+  linkableUsers: LinkableAppUser[];
 }) {
   const [editingId, setEditingId] = useState<string>();
   const editingPlayer = players.find((player) => player.id === editingId);
+  const formLinkableUsers =
+    editingPlayer?.appUserId &&
+    editingPlayer.accountEmail &&
+    editingPlayer.accountRole
+      ? [
+          {
+            id: editingPlayer.appUserId,
+            email: editingPlayer.accountEmail,
+            displayName: editingPlayer.accountDisplayName ?? "",
+            role: editingPlayer.accountRole,
+          },
+          ...linkableUsers,
+        ]
+      : linkableUsers;
 
   return (
     <div className="grid items-start gap-6 xl:grid-cols-[1fr_340px]">
@@ -95,22 +115,21 @@ export function PlayerManager({
                         ) : player.accountRole === "admin" ? (
                           <ShieldPlus className="mr-1" size={13} />
                         ) : null}
-                        {player.accountRole.replace("_", " ")}
+                        {roleLabel(player.accountRole)}
                       </Badge>
+                    ) : player.appUserId ? (
+                      <Badge tone="warning">Linked account missing</Badge>
                     ) : player.accountEmail ? (
-                      <Badge tone="neutral">No app account</Badge>
-                    ) : null}
+                      <Badge tone="neutral">Pending invite</Badge>
+                    ) : (
+                      <Badge tone="neutral">No account linked</Badge>
+                    )}
                   </div>
                 </div>
                 {canManage ? (
                   <div className="mt-3 flex flex-wrap items-start justify-end gap-2 border-t border-slate-100 pt-3">
-                    {canManageRoles &&
-                    player.accountEmail &&
-                    player.accountRole !== "super_admin" ? (
-                      <AdminRoleButton
-                        player={player}
-                        isAdmin={player.accountRole !== "admin"}
-                      />
+                    {canManageRoles && player.appUserId ? (
+                      <AdminRoleButton player={player} />
                     ) : null}
                     <Button
                       type="button"
@@ -137,6 +156,7 @@ export function PlayerManager({
         <PlayerForm
           key={editingPlayer?.id ?? "new"}
           player={editingPlayer}
+          linkableUsers={formLinkableUsers}
           onCancel={() => setEditingId(undefined)}
         />
       ) : null}

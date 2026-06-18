@@ -9,14 +9,17 @@ import {
   type ActionState,
 } from "@/app/actions";
 import { Button, Card } from "@/components/ui";
-import type { AppUserRole } from "@/lib/roles";
+import type { LinkableAppUser } from "@/lib/data";
+import { roleLabel, type AppUserRole } from "@/lib/roles";
 
 const initialState: ActionState = { ok: false, message: "" };
 
 type EditablePlayer = {
   id: string;
   name: string;
+  appUserId: string | null;
   accountEmail: string | null;
+  accountDisplayName: string | null;
   accountRole: AppUserRole | null;
   rating: number;
   isActive: boolean;
@@ -24,9 +27,11 @@ type EditablePlayer = {
 
 export function PlayerForm({
   player,
+  linkableUsers,
   onCancel,
 }: {
   player?: EditablePlayer;
+  linkableUsers: LinkableAppUser[];
   onCancel?: () => void;
 }) {
   const [state, action, pending] = useActionState(savePlayer, initialState);
@@ -65,13 +70,29 @@ export function PlayerForm({
           />
         </label>
         <label className="block">
-          <span className="field-label">Account email</span>
+          <span className="field-label">Linked app account</span>
+          <select
+            className="field"
+            name="appUserId"
+            defaultValue={player?.appUserId ?? ""}
+          >
+            <option value="">No linked account</option>
+            {linkableUsers.map((user) => (
+              <option key={user.id} value={user.id}>
+                {user.displayName ? `${user.displayName} · ` : ""}
+                {user.email} · {roleLabel(user.role)}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="block">
+          <span className="field-label">Pending email</span>
           <input
             className="field"
             name="accountEmail"
             type="email"
             placeholder="player@example.com"
-            defaultValue={player?.accountEmail ?? ""}
+            defaultValue={player?.appUserId ? "" : (player?.accountEmail ?? "")}
           />
         </label>
         <label className="block">
@@ -130,36 +151,37 @@ export function PlayerForm({
   );
 }
 
-export function AdminRoleButton({
-  player,
-  isAdmin,
-}: {
-  player: EditablePlayer;
-  isAdmin: boolean;
-}) {
+export function AdminRoleButton({ player }: { player: EditablePlayer }) {
   const [state, action, pending] = useActionState(
     setPlayerAdminRole,
     initialState,
   );
 
-  if (!player.accountEmail) return null;
+  if (!player.appUserId || !player.accountRole) return null;
 
   return (
-    <form action={action}>
-      <input type="hidden" name="email" value={player.accountEmail} />
-      <input type="hidden" name="isAdmin" value={String(isAdmin)} />
-      <Button
-        type="submit"
-        variant={isAdmin ? "secondary" : "ghost"}
-        disabled={pending}
-        aria-label={`${isAdmin ? "Grant" : "Revoke"} admin for ${player.name}`}
+    <form action={action} className="flex flex-wrap items-start gap-2">
+      <input type="hidden" name="appUserId" value={player.appUserId} />
+      <label className="sr-only" htmlFor={`role-${player.id}`}>
+        Role for {player.name}
+      </label>
+      <select
+        id={`role-${player.id}`}
+        name="role"
+        className="field min-h-11 w-36 py-2 text-sm"
+        defaultValue={player.accountRole}
       >
-        {pending ? "Updating..." : isAdmin ? "Make admin" : "Remove admin"}
+        <option value="member">Member</option>
+        <option value="admin">Admin</option>
+        <option value="super_admin">Super admin</option>
+      </select>
+      <Button type="submit" variant="ghost" disabled={pending}>
+        {pending ? "Updating..." : "Update role"}
       </Button>
       {state.message ? (
         <p
           role="status"
-          className={`mt-2 max-w-64 text-xs font-semibold ${
+          className={`basis-full text-xs font-semibold ${
             state.ok ? "text-emerald-700" : "text-rose-600"
           }`}
         >
