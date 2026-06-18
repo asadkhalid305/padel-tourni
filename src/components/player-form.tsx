@@ -2,14 +2,22 @@
 
 import { useActionState, useEffect, useRef } from "react";
 
-import { deletePlayer, savePlayer, type ActionState } from "@/app/actions";
+import {
+  deletePlayer,
+  savePlayer,
+  setPlayerAdminRole,
+  type ActionState,
+} from "@/app/actions";
 import { Button, Card } from "@/components/ui";
+import type { AppUserRole } from "@/lib/roles";
 
 const initialState: ActionState = { ok: false, message: "" };
 
 type EditablePlayer = {
   id: string;
   name: string;
+  accountEmail: string | null;
+  accountRole: AppUserRole | null;
   rating: number;
   isActive: boolean;
 };
@@ -54,6 +62,16 @@ export function PlayerForm({
             required
             minLength={2}
             defaultValue={player?.name}
+          />
+        </label>
+        <label className="block">
+          <span className="field-label">Account email</span>
+          <input
+            className="field"
+            name="accountEmail"
+            type="email"
+            placeholder="player@example.com"
+            defaultValue={player?.accountEmail ?? ""}
           />
         </label>
         <label className="block">
@@ -109,6 +127,46 @@ export function PlayerForm({
         ) : null}
       </form>
     </Card>
+  );
+}
+
+export function AdminRoleButton({
+  player,
+  isAdmin,
+}: {
+  player: EditablePlayer;
+  isAdmin: boolean;
+}) {
+  const [state, action, pending] = useActionState(
+    setPlayerAdminRole,
+    initialState,
+  );
+
+  if (!player.accountEmail) return null;
+
+  return (
+    <form action={action}>
+      <input type="hidden" name="email" value={player.accountEmail} />
+      <input type="hidden" name="isAdmin" value={String(isAdmin)} />
+      <Button
+        type="submit"
+        variant={isAdmin ? "secondary" : "ghost"}
+        disabled={pending}
+        aria-label={`${isAdmin ? "Grant" : "Revoke"} admin for ${player.name}`}
+      >
+        {pending ? "Updating..." : isAdmin ? "Make admin" : "Remove admin"}
+      </Button>
+      {state.message ? (
+        <p
+          role="status"
+          className={`mt-2 max-w-64 text-xs font-semibold ${
+            state.ok ? "text-emerald-700" : "text-rose-600"
+          }`}
+        >
+          {state.message}
+        </p>
+      ) : null}
+    </form>
   );
 }
 

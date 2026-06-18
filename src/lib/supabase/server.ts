@@ -4,6 +4,12 @@ import { cookies } from "next/headers";
 import { createServerClient as createSupabaseServerClient } from "@supabase/ssr";
 import { createClient } from "@supabase/supabase-js";
 
+import {
+  DEFAULT_SUPER_ADMIN_EMAIL,
+  isAdminRole,
+  isSuperAdminRole,
+  type AppUserRole,
+} from "@/lib/roles";
 import type { Database } from "@/types/database";
 
 export function isSupabaseConfigured() {
@@ -60,15 +66,17 @@ export async function createAuthClient() {
   });
 }
 
-export type AppUserRole =
-  Database["public"]["Tables"]["app_users"]["Row"]["role"];
-
 export type AuthenticatedAppUser = {
   id: string;
   email: string;
   displayName: string;
   role: AppUserRole;
 };
+
+type AppUserAuthRow = Pick<
+  Database["public"]["Tables"]["app_users"]["Row"],
+  "id" | "email" | "display_name" | "role"
+>;
 
 export async function getAuthenticatedUser(): Promise<AuthenticatedAppUser | null> {
   const authClient = await createAuthClient();
@@ -94,7 +102,12 @@ export async function getAuthenticatedUser(): Promise<AuthenticatedAppUser | nul
 
 export async function requireAdminUser(): Promise<AuthenticatedAppUser | null> {
   const user = await getAuthenticatedUser();
-  return user?.role === "admin" ? user : null;
+  return user && isAdminRole(user.role) ? user : null;
+}
+
+export async function requireSuperAdminUser(): Promise<AuthenticatedAppUser | null> {
+  const user = await getAuthenticatedUser();
+  return user && isSuperAdminRole(user.role) ? user : null;
 }
 
 export async function ensureAppUser({
@@ -125,11 +138,13 @@ export async function ensureAppUser({
 
   if (error) throw error;
 
+  const promoted = await promoteDefaultSuperAdmin(data);
+
   return {
-    id: data.id,
-    email: data.email,
-    displayName: data.display_name,
-    role: data.role,
+    id: promoted.id,
+    email: promoted.email,
+    displayName: promoted.display_name,
+    role: promoted.role,
   };
 }
 
@@ -149,4 +164,22 @@ function isUsableSupabaseUrl(url: string | undefined): url is string {
   } catch {
     return false;
   }
+}
+
+async function promoteDefaultSuperAdmin(user: AppUserAuthRow) {
+  if (user.email !== DEFAULT_SUPER_ADMIN_EMAIL || isSuperAdminRole(user.role)) {
+    return user;
+  }
+
+  const client = createServerClient();
+  if (!client) return user;
+
+  const { data, error } = await client
+    .from("app_users")
+    .update({ role: "super_admin" })
+    .eq("id", user.id)
+    .select("id,email,display_name,role")
+    .single();
+  if (error) throw error;
+  return data;
 }

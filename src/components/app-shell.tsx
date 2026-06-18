@@ -14,6 +14,7 @@ import { use } from "react";
 import type { ReactNode } from "react";
 
 import { signOut } from "@/app/actions";
+import { isAdminRole } from "@/lib/roles";
 import { cn } from "@/lib/utils";
 import type { AuthenticatedAppUser } from "@/lib/supabase/server";
 
@@ -33,7 +34,7 @@ export function AppShell({
 }) {
   const pathname = usePathname();
   const user = use(userPromise);
-  const isAdmin = user?.role === "admin";
+  const isAdmin = user ? isAdminRole(user.role) : false;
 
   if (pathname === "/login") {
     return children;

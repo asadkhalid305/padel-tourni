@@ -7,6 +7,7 @@ import type {
   ScheduledMatch,
 } from "@/domain/types";
 import { demoEvent, demoEvents, demoPlayers } from "@/lib/demo-data";
+import type { AppUserRole } from "@/lib/roles";
 import {
   createServerClient,
   isSupabaseConfigured,
@@ -16,6 +17,8 @@ import type { Database } from "@/types/database";
 type PlayerRecord = {
   id: string;
   name: string;
+  accountEmail: string | null;
+  accountRole: AppUserRole | null;
   rating: number;
   isActive: boolean;
 };
@@ -57,18 +60,41 @@ type RoundWithMatches = Database["public"]["Tables"]["event_rounds"]["Row"] & {
 export async function listPlayers(): Promise<PlayerRecord[]> {
   const client = createServerClient();
   if (!client) {
-    return demoPlayers.map((player) => ({ ...player, isActive: true }));
+    return demoPlayers.map((player) => ({
+      ...player,
+      accountEmail: null,
+      accountRole: null,
+      isActive: true,
+    }));
   }
 
   const { data, error } = await client
     .from("players")
-    .select("id,name,rating,is_active")
+    .select("id,name,account_email,rating,is_active")
     .order("is_active", { ascending: false })
     .order("name");
   if (error) throw error;
+
+  const emails = data
+    .map((player) => player.account_email)
+    .filter((email): email is string => Boolean(email));
+  const roleByEmail = new Map<string, AppUserRole>();
+  if (emails.length) {
+    const { data: users, error: usersError } = await client
+      .from("app_users")
+      .select("email,role")
+      .in("email", emails);
+    if (usersError) throw usersError;
+    users.forEach((user) => roleByEmail.set(user.email, user.role));
+  }
+
   return data.map((player) => ({
     id: player.id,
     name: player.name,
+    accountEmail: player.account_email,
+    accountRole: player.account_email
+      ? (roleByEmail.get(player.account_email) ?? null)
+      : null,
     rating: Number(player.rating),
     isActive: player.is_active,
   }));

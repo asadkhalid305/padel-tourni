@@ -1,8 +1,15 @@
 import { z } from "zod";
 
+const optionalEmailSchema = z.preprocess((value) => {
+  if (typeof value !== "string") return value;
+  const trimmed = value.trim().toLowerCase();
+  return trimmed ? trimmed : null;
+}, z.string().email().nullable());
+
 export const playerSchema = z.object({
   id: z.string().uuid().optional(),
   name: z.string().trim().min(2).max(80),
+  accountEmail: optionalEmailSchema,
   rating: z.coerce.number().min(1).max(10),
   isActive: z.coerce.boolean().default(true),
 });

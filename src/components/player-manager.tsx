@@ -1,15 +1,29 @@
 "use client";
 
-import { Pencil, Star, UserRoundCheck, UserRoundX } from "lucide-react";
+import {
+  Pencil,
+  ShieldCheck,
+  ShieldPlus,
+  Star,
+  UserRoundCheck,
+  UserRoundX,
+} from "lucide-react";
 import { useState } from "react";
 
-import { DeletePlayerButton, PlayerForm } from "@/components/player-form";
+import {
+  AdminRoleButton,
+  DeletePlayerButton,
+  PlayerForm,
+} from "@/components/player-form";
 import { Badge, Button, Card } from "@/components/ui";
+import type { AppUserRole } from "@/lib/roles";
 import { initials } from "@/lib/utils";
 
 type Player = {
   id: string;
   name: string;
+  accountEmail: string | null;
+  accountRole: AppUserRole | null;
   rating: number;
   isActive: boolean;
 };
@@ -17,9 +31,11 @@ type Player = {
 export function PlayerManager({
   players,
   canManage,
+  canManageRoles,
 }: {
   players: Player[];
   canManage: boolean;
+  canManageRoles: boolean;
 }) {
   const [editingId, setEditingId] = useState<string>();
   const editingPlayer = players.find((player) => player.id === editingId);
@@ -49,8 +65,13 @@ export function PlayerManager({
                       />
                       Rating {player.rating.toFixed(1)}
                     </div>
+                    {player.accountEmail ? (
+                      <p className="mt-1 truncate text-xs font-semibold text-slate-500">
+                        {player.accountEmail}
+                      </p>
+                    ) : null}
                   </div>
-                  <div className="ml-auto">
+                  <div className="ml-auto flex flex-col items-end gap-1">
                     <Badge tone={player.isActive ? "success" : "neutral"}>
                       {player.isActive ? (
                         <UserRoundCheck className="mr-1" size={13} />
@@ -59,10 +80,38 @@ export function PlayerManager({
                       )}
                       {player.isActive ? "Active" : "Inactive"}
                     </Badge>
+                    {player.accountRole ? (
+                      <Badge
+                        tone={
+                          player.accountRole === "super_admin"
+                            ? "warning"
+                            : player.accountRole === "admin"
+                              ? "info"
+                              : "neutral"
+                        }
+                      >
+                        {player.accountRole === "super_admin" ? (
+                          <ShieldCheck className="mr-1" size={13} />
+                        ) : player.accountRole === "admin" ? (
+                          <ShieldPlus className="mr-1" size={13} />
+                        ) : null}
+                        {player.accountRole.replace("_", " ")}
+                      </Badge>
+                    ) : player.accountEmail ? (
+                      <Badge tone="neutral">No app account</Badge>
+                    ) : null}
                   </div>
                 </div>
                 {canManage ? (
-                  <div className="mt-3 flex items-start justify-end gap-2 border-t border-slate-100 pt-3">
+                  <div className="mt-3 flex flex-wrap items-start justify-end gap-2 border-t border-slate-100 pt-3">
+                    {canManageRoles &&
+                    player.accountEmail &&
+                    player.accountRole !== "super_admin" ? (
+                      <AdminRoleButton
+                        player={player}
+                        isAdmin={player.accountRole !== "admin"}
+                      />
+                    ) : null}
                     <Button
                       type="button"
                       variant="secondary"

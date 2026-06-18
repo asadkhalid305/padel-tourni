@@ -17,7 +17,7 @@ export type Database = {
           id: string;
           email: string;
           display_name: string;
-          role: "member" | "admin";
+          role: "member" | "admin" | "super_admin";
           created_at: string;
           updated_at: string;
         };
@@ -25,7 +25,7 @@ export type Database = {
           id: string;
           email: string;
           display_name?: string;
-          role?: "member" | "admin";
+          role?: "member" | "admin" | "super_admin";
           created_at?: string;
           updated_at?: string;
         };
@@ -33,7 +33,7 @@ export type Database = {
           id?: string;
           email?: string;
           display_name?: string;
-          role?: "member" | "admin";
+          role?: "member" | "admin" | "super_admin";
           created_at?: string;
           updated_at?: string;
         };
@@ -43,6 +43,7 @@ export type Database = {
         Row: {
           id: string;
           name: string;
+          account_email: string | null;
           rating: number;
           is_active: boolean;
           created_at: string;
@@ -51,6 +52,7 @@ export type Database = {
         Insert: {
           id?: string;
           name: string;
+          account_email?: string | null;
           rating?: number;
           is_active?: boolean;
           created_at?: string;
@@ -59,6 +61,7 @@ export type Database = {
         Update: {
           id?: string;
           name?: string;
+          account_email?: string | null;
           rating?: number;
           is_active?: boolean;
           created_at?: string;

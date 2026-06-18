@@ -2,6 +2,7 @@ import "server-only";
 
 import { z } from "zod";
 
+import { isSuperAdminRole } from "@/lib/roles";
 import { createServerClient, normalizeUserEmail } from "@/lib/supabase/server";
 
 export const adminRoleRequestSchema = z.object({
@@ -29,22 +30,42 @@ export async function setAdminRoleForEmail(email: string, isAdmin: boolean) {
   }
 
   const normalizedEmail = normalizeUserEmail(email);
-  const { data, error } = await client
+  const { data: existing, error: readError } = await client
     .from("app_users")
-    .update({ role: isAdmin ? "admin" : "member" })
-    .eq("email", normalizedEmail)
     .select("id,email,role")
+    .eq("email", normalizedEmail)
     .maybeSingle();
 
-  if (error) {
-    return { ok: false as const, status: 500, message: error.message };
+  if (readError) {
+    return { ok: false as const, status: 500, message: readError.message };
   }
-  if (!data) {
+  if (!existing) {
     return {
       ok: false as const,
       status: 404,
       message: "No account exists for that email address.",
     };
+  }
+  if (isSuperAdminRole(existing.role)) {
+    if (!isAdmin) {
+      return {
+        ok: false as const,
+        status: 403,
+        message: "Super admin accounts cannot be demoted.",
+      };
+    }
+    return { ok: true as const, user: existing };
+  }
+
+  const { data, error } = await client
+    .from("app_users")
+    .update({ role: isAdmin ? "admin" : "member" })
+    .eq("id", existing.id)
+    .select("id,email,role")
+    .single();
+
+  if (error) {
+    return { ok: false as const, status: 500, message: error.message };
   }
 
   return { ok: true as const, user: data };

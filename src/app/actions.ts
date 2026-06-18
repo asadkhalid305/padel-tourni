@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { z } from "zod";
 
 import { assertCanRegenerate } from "@/domain/consistency";
 import { canEditDrawLineup } from "@/domain/draw-permissions";
@@ -12,7 +13,9 @@ import {
   createAuthClient,
   createServerClient,
   requireAdminUser,
+  requireSuperAdminUser,
 } from "@/lib/supabase/server";
+import { setAdminRoleForEmail } from "@/lib/auth-admin";
 import { eventSchema, playerSchema, scoreSchema } from "@/lib/validation";
 
 export type ActionState = {
@@ -29,6 +32,11 @@ const forbidden: ActionState = {
   ok: false,
   message: "Only admins can make changes.",
 };
+
+const roleChangeSchema = z.object({
+  email: z.string().email(),
+  isAdmin: z.enum(["true", "false"]).transform((value) => value === "true"),
+});
 
 async function assertAdminAction(): Promise<ActionState | null> {
   const user = await requireAdminUser();
@@ -50,6 +58,7 @@ export async function savePlayer(
   const parsed = playerSchema.safeParse({
     id: formData.get("id") || undefined,
     name: formData.get("name"),
+    accountEmail: formData.get("accountEmail"),
     rating: formData.get("rating"),
     isActive: formData.getAll("isActive").includes("true"),
   });
@@ -63,6 +72,7 @@ export async function savePlayer(
   if (!client) return unavailable;
   const payload = {
     name: parsed.data.name,
+    account_email: parsed.data.accountEmail,
     rating: parsed.data.rating,
     is_active: parsed.data.isActive,
   };
@@ -111,6 +121,41 @@ export async function deletePlayer(
   revalidatePath("/");
   revalidatePath("/events/new");
   return { ok: true, message: "Player deleted." };
+}
+
+export async function setPlayerAdminRole(
+  _previous: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const parsed = roleChangeSchema.safeParse({
+    email: formData.get("email"),
+    isAdmin: formData.get("isAdmin"),
+  });
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.issues[0].message };
+  }
+
+  const superAdminUser = await requireSuperAdminUser();
+  if (!superAdminUser) {
+    return {
+      ok: false,
+      message: "Only the super admin can change admin roles.",
+    };
+  }
+
+  const result = await setAdminRoleForEmail(
+    parsed.data.email,
+    parsed.data.isAdmin,
+  );
+  if (!result.ok) {
+    return { ok: false, message: result.message };
+  }
+
+  revalidatePath("/players");
+  return {
+    ok: true,
+    message: parsed.data.isAdmin ? "Admin granted." : "Admin revoked.",
+  };
 }
 
 export async function createEvent(formData: FormData) {
