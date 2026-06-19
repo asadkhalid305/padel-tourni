@@ -12,4 +12,5 @@ description: Use when building or reviewing responsive Next.js operational scree
 5. Use the padel visual language consistently: deep court green, warm lime accents, clear status colors, and restrained motion.
 6. Preserve keyboard access, visible focus, semantic labels, adequate contrast, and touch targets.
 7. Show destructive or irreversible actions explicitly, especially completed-score changes and schedule regeneration.
-8. Verify dashboard, players, event creation, draw, live scoring, and standings at mobile and desktop widths.
+8. Verify the affected UI surface at mobile and desktop widths.
+9. For UI verification, use the in-app browser first. If that is unavailable, fall back to the Chrome plugin. Do not switch to Playwright or other options.

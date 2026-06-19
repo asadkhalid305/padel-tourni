@@ -32,4 +32,4 @@ export PATH=/bin:/usr/bin:/usr/local/bin:$PATH; source ~/.nvm/nvm.sh && nvm use
 
 The `.nvmrc` value is authoritative; a plain shell may otherwise fall back to the system Node.
 
-Before completion, run formatting, linting, type checking, business-logic tests, the production build, visual inspection, migration verification, and GitHub push verification.
+Before completion, run only the checks that matter for the change. Typical checks are formatting, linting, targeted type checks, relevant tests, a production build when build output can change, visual inspection for UI work, migration verification for schema changes, and GitHub push verification when publishing.
