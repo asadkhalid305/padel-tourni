@@ -14,6 +14,7 @@ import { use } from "react";
 import type { ReactNode } from "react";
 
 import { signOut } from "@/app/actions";
+import { BrandLogo } from "@/components/brand-logo";
 import { PendingSubmitButton } from "@/components/pending-submit-button";
 import { isAdminRole } from "@/lib/roles";
 import { cn } from "@/lib/utils";
@@ -44,16 +45,8 @@ export function AppShell({
   return (
     <div className="h-dvh overflow-hidden lg:grid lg:grid-cols-[250px_1fr]">
       <aside className="hidden min-h-0 overflow-y-auto border-r border-white/10 bg-[var(--ink)] p-5 text-white lg:flex lg:flex-col">
-        <Link href="/" className="flex items-center gap-3 px-2 py-4">
-          <span className="grid size-11 place-items-center rounded-2xl bg-[var(--lime)] text-lg font-black text-[var(--ink)]">
-            P
-          </span>
-          <span>
-            <span className="block text-lg font-black tracking-tight">
-              Padel Tour
-            </span>
-            <span className="text-xs text-white/55">Event command center</span>
-          </span>
+        <Link href="/" className="px-2 py-4" aria-label="Padel Tourni home">
+          <BrandLogo tagline />
         </Link>
         <nav className="mt-8 space-y-2">
           {navigation.map((item) => {
@@ -110,14 +103,8 @@ export function AppShell({
       <main className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden">
         <header className="shrink-0 border-b border-emerald-950/5 bg-white/55 px-5 py-4 backdrop-blur lg:px-9">
           <div className="flex items-center justify-between">
-            <Link
-              href="/"
-              className="flex items-center gap-2 font-black lg:hidden"
-            >
-              <span className="grid size-9 place-items-center rounded-xl bg-[var(--lime)]">
-                P
-              </span>
-              Padel Tour
+            <Link href="/" className="lg:hidden" aria-label="Padel Tourni home">
+              <BrandLogo markClassName="size-9" />
             </Link>
             <p className="hidden text-sm font-semibold text-slate-500 lg:block">
               {user?.email ?? "Recreational events, run beautifully."}

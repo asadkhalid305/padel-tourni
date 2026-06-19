@@ -1,6 +1,6 @@
-# Padel Tour
+# Padel Tourni
 
-Padel Tour is a recreational event-management app for reusable player rosters, fair Americano-style draws, live scoring and timers, standings, and cross-event history.
+Padel Tourni is a recreational event-management app for reusable player rosters, fair Americano-style draws, live scoring and timers, standings, and cross-event history.
 
 ## Features
 
@@ -63,7 +63,7 @@ supabase gen types typescript --local --schema public > src/types/database.ts
 
 ### Local Google Auth
 
-Local Padeltour always runs on `http://localhost:3100`. `npm run dev` fails if that port is busy instead of silently falling back to another port, because OAuth redirect URLs must stay exact.
+Local Padel Tourni always runs on `http://localhost:3100`. `npm run dev` fails if that port is busy instead of silently falling back to another port, because OAuth redirect URLs must stay exact.
 
 Local Supabase can run the same Google OAuth flow as the hosted project. Create a Google OAuth **Web application** client and configure it with:
 
