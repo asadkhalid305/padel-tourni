@@ -19,7 +19,7 @@ export function Button({
   variant = "primary",
   ...props
 }: ButtonHTMLAttributes<HTMLButtonElement> & {
-  variant?: "primary" | "secondary" | "ghost" | "danger";
+  variant?: ButtonVariant;
 }) {
   const variants = {
     primary:
@@ -35,6 +35,24 @@ export function Button({
         variants[variant],
         className,
       )}
+      {...props}
+    />
+  );
+}
+
+export type ButtonVariant = "primary" | "secondary" | "ghost" | "danger";
+
+export function Spinner({
+  className,
+  ...props
+}: HTMLAttributes<HTMLSpanElement>) {
+  return (
+    <span
+      className={cn(
+        "inline-block size-4 shrink-0 animate-spin rounded-full border-2 border-current border-r-transparent",
+        className,
+      )}
+      aria-hidden="true"
       {...props}
     />
   );

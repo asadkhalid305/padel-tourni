@@ -4,7 +4,7 @@ import { ChevronDown } from "lucide-react";
 import { useActionState } from "react";
 
 import { updateMatchLineup, type ActionState } from "@/app/actions";
-import { Button } from "@/components/ui";
+import { Button, Spinner } from "@/components/ui";
 
 const initialState: ActionState = { ok: false, message: "" };
 
@@ -62,7 +62,16 @@ export function MatchEditor({
         variant="primary"
         disabled={disabled || pending}
       >
-        {disabled ? "Draw locked" : pending ? "Updating..." : "Update draw"}
+        {disabled ? (
+          "Draw locked"
+        ) : pending ? (
+          <>
+            <Spinner />
+            Updating...
+          </>
+        ) : (
+          "Update draw"
+        )}
       </Button>
       {state.message ? (
         <p

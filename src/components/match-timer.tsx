@@ -4,6 +4,7 @@ import { Pause, Play, RotateCcw } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { updateTimer } from "@/app/actions";
+import { PendingSubmitButton } from "@/components/pending-submit-button";
 import { timerDisplay } from "@/domain/timer";
 
 function clock(seconds: number) {
@@ -68,7 +69,11 @@ export function MatchTimer({
           <input type="hidden" name="matchId" value={matchId} />
           <input type="hidden" name="eventId" value={eventId} />
           <input type="hidden" name="operation" value={operation} />
-          <button className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-white/10 text-sm font-bold hover:bg-white/15">
+          <PendingSubmitButton
+            className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-white/10 text-sm font-bold text-white shadow-none hover:bg-white/15"
+            variant="ghost"
+            pendingLabel="Updating timer..."
+          >
             {!startedAt ? (
               <Play size={17} />
             ) : pausedAt ? (
@@ -81,7 +86,7 @@ export function MatchTimer({
               : pausedAt
                 ? "Resume timer"
                 : "Pause timer"}
-          </button>
+          </PendingSubmitButton>
         </form>
       ) : null}
     </div>

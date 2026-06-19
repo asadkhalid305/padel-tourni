@@ -8,7 +8,7 @@ import {
   setPlayerAdminRole,
   type ActionState,
 } from "@/app/actions";
-import { Button, Card } from "@/components/ui";
+import { Button, Card, Spinner } from "@/components/ui";
 import type { LinkableAppUser } from "@/lib/data";
 import { roleLabel, type AppUserRole } from "@/lib/roles";
 
@@ -134,7 +134,16 @@ export function PlayerForm({
             </Button>
           ) : null}
           <Button className="flex-1" disabled={pending}>
-            {pending ? "Saving..." : player ? "Save changes" : "Add player"}
+            {pending ? (
+              <>
+                <Spinner />
+                Saving...
+              </>
+            ) : player ? (
+              "Save changes"
+            ) : (
+              "Add player"
+            )}
           </Button>
         </div>
         {state.message ? (
@@ -170,13 +179,21 @@ export function AdminRoleButton({ player }: { player: EditablePlayer }) {
         name="role"
         className="field min-h-11 w-36 py-2 text-sm"
         defaultValue={player.accountRole}
+        disabled={pending}
       >
         <option value="member">Member</option>
         <option value="admin">Admin</option>
         <option value="super_admin">Super admin</option>
       </select>
       <Button type="submit" variant="ghost" disabled={pending}>
-        {pending ? "Updating..." : "Update role"}
+        {pending ? (
+          <>
+            <Spinner />
+            Updating...
+          </>
+        ) : (
+          "Update role"
+        )}
       </Button>
       {state.message ? (
         <p
@@ -211,7 +228,14 @@ export function DeletePlayerButton({ player }: { player: EditablePlayer }) {
         disabled={pending}
         aria-label={`Delete ${player.name}`}
       >
-        {pending ? "Deleting..." : "Delete"}
+        {pending ? (
+          <>
+            <Spinner />
+            Deleting...
+          </>
+        ) : (
+          "Delete"
+        )}
       </Button>
       {state.message ? (
         <p

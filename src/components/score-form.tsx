@@ -3,7 +3,7 @@
 import { useActionState } from "react";
 
 import { saveScore, type ActionState } from "@/app/actions";
-import { Button } from "@/components/ui";
+import { Button, Spinner } from "@/components/ui";
 
 const initialState: ActionState = { ok: false, message: "" };
 
@@ -43,7 +43,14 @@ export function ScoreForm({
         />
       </div>
       <Button className="mt-3 w-full" variant="secondary" disabled={pending}>
-        {pending ? "Saving score..." : "Complete match"}
+        {pending ? (
+          <>
+            <Spinner />
+            Saving score...
+          </>
+        ) : (
+          "Complete match"
+        )}
       </Button>
       {state.message ? (
         <p

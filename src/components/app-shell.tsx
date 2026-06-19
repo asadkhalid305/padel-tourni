@@ -14,6 +14,7 @@ import { use } from "react";
 import type { ReactNode } from "react";
 
 import { signOut } from "@/app/actions";
+import { PendingSubmitButton } from "@/components/pending-submit-button";
 import { isAdminRole } from "@/lib/roles";
 import { cn } from "@/lib/utils";
 import type { AuthenticatedAppUser } from "@/lib/supabase/server";
@@ -94,13 +95,14 @@ export function AppShell({
             </p>
           </div>
           <form action={signOut}>
-            <button
-              type="submit"
-              className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-white/10 px-3 text-sm font-bold text-white/75 transition hover:bg-white/10 hover:text-white"
+            <PendingSubmitButton
+              className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-white/10 bg-transparent px-3 text-sm font-bold text-white/75 transition hover:bg-white/10 hover:text-white"
+              variant="ghost"
+              pendingLabel="Signing out..."
             >
               <LogOut size={17} />
               Sign out
-            </button>
+            </PendingSubmitButton>
           </form>
         </div>
       </aside>
@@ -130,13 +132,14 @@ export function AppShell({
                 </Link>
               ) : null}
               <form action={signOut}>
-                <button
-                  type="submit"
+                <PendingSubmitButton
                   className="grid size-10 place-items-center rounded-xl border border-emerald-950/10 bg-white text-[var(--ink)]"
                   aria-label="Sign out"
+                  variant="ghost"
+                  pendingLabel={<span className="sr-only">Signing out...</span>}
                 >
                   <LogOut size={17} />
-                </button>
+                </PendingSubmitButton>
               </form>
             </div>
           </div>

@@ -2,9 +2,11 @@
 
 import { Sparkles } from "lucide-react";
 import { type FormEvent, type ReactNode, useState } from "react";
+import { useFormStatus } from "react-dom";
 
 import { EventAvailabilityFields } from "@/components/event-availability-fields";
-import { Button, Card } from "@/components/ui";
+import { PendingSubmitButton } from "@/components/pending-submit-button";
+import { Card } from "@/components/ui";
 import {
   calculateMinimumEventPlayerCount,
   formatMinimumEventPlayerMessage,
@@ -191,16 +193,42 @@ export function EventForm({
                 </li>
               ))}
             </ol>
-            <Button
+            <PendingSubmitButton
               className="mt-7 w-full"
               variant="secondary"
               disabled={!configured}
+              pendingLabel="Generating event..."
             >
               Generate event
-            </Button>
+            </PendingSubmitButton>
+            <EventCreationProgress />
           </Card>
         </div>
       </form>
     </>
+  );
+}
+
+function EventCreationProgress() {
+  const { pending } = useFormStatus();
+
+  if (!pending) return null;
+
+  return (
+    <div
+      className="mt-5 rounded-2xl border border-white/10 bg-white/10 p-4"
+      role="status"
+      aria-live="polite"
+    >
+      <p className="text-sm font-bold text-white">Building the event...</p>
+      <div className="mt-3 space-y-2" aria-hidden="true">
+        {["w-11/12", "w-9/12", "w-10/12"].map((width) => (
+          <span
+            key={width}
+            className={`block h-3 animate-pulse rounded-full bg-white/20 ${width}`}
+          />
+        ))}
+      </div>
+    </div>
   );
 }
