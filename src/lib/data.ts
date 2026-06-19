@@ -1,5 +1,7 @@
 import "server-only";
 
+import { canChangeEventSchedule } from "@/domain/event-mutations";
+import { effectiveEventStatus } from "@/domain/event-status";
 import { calculateStandings } from "@/domain/standings";
 import type {
   CompletedMatch,
@@ -23,6 +25,19 @@ type PlayerRecord = {
   accountRole: AppUserRole | null;
   rating: number;
   isActive: boolean;
+};
+
+export type EventFormInitialValues = {
+  name: string;
+  venue: string;
+  startsAt: string;
+  courtCount: number;
+  courtMinutes: number[];
+  requestedRoundMinutes: number;
+  breakMinutes: number;
+  notes: string;
+  playerIds: string[];
+  scheduleLocked: boolean;
 };
 
 export type LinkableAppUser = {
@@ -76,6 +91,8 @@ type PlayerLinkRow = {
   app_user_id: string | null;
   account_email: string | null;
 };
+
+type EventPlayerRow = Database["public"]["Tables"]["event_players"]["Row"];
 
 export async function listPlayers(): Promise<PlayerRecord[]> {
   const client = createServerClient();
@@ -256,7 +273,10 @@ export async function listEvents(): Promise<EventSummary[]> {
       name: event.name,
       venue: event.venue,
       startsAt: event.startsAt,
-      status: event.status,
+      status: effectiveEventStatus({
+        status: event.status,
+        startsAt: event.startsAt,
+      }),
       playerCount: event.players.length,
       completedMatches: event.completedMatches.length,
       totalMatches: event.schedule.rounds.flatMap((round) => round.matches)
@@ -388,7 +408,10 @@ export async function getEvent(eventId: string) {
     name: event.name,
     venue: event.venue,
     startsAt: event.starts_at,
-    status: event.status,
+    status: effectiveEventStatus({
+      status: event.status,
+      startsAt: event.starts_at,
+    }),
     seed: event.seed,
     roundMinutes: event.round_minutes,
     breakMinutes: event.break_minutes,
@@ -398,6 +421,70 @@ export async function getEvent(eventId: string) {
     schedule,
     completedMatches,
     standings: calculateStandings(players, completedMatches),
+  };
+}
+
+export async function getEventFormInitialValues(
+  eventId: string,
+): Promise<EventFormInitialValues | null> {
+  const client = createServerClient();
+  if (!client) return null;
+
+  const [{ data: event, error: eventError }, playersResult, roundsResult] =
+    await Promise.all([
+      client
+        .from("events")
+        .select("name,venue,starts_at,round_minutes,break_minutes,notes")
+        .eq("id", eventId)
+        .single(),
+      client
+        .from("event_players")
+        .select("*")
+        .eq("event_id", eventId)
+        .order("display_order"),
+      client
+        .from("event_rounds")
+        .select("round_number,matches(court_number,status)")
+        .eq("event_id", eventId)
+        .order("round_number"),
+    ]);
+
+  if (eventError) return null;
+  if (playersResult.error) throw playersResult.error;
+  if (roundsResult.error) throw roundsResult.error;
+
+  const players = playersResult.data as EventPlayerRow[];
+  const matchStatuses = roundsResult.data.flatMap((round) =>
+    round.matches.map((match) => match.status),
+  );
+  const courtSlotCounts = new Map<number, number>();
+  for (const round of roundsResult.data) {
+    for (const match of round.matches) {
+      courtSlotCounts.set(
+        match.court_number,
+        (courtSlotCounts.get(match.court_number) ?? 0) + 1,
+      );
+    }
+  }
+  const courtCount = Math.max(...courtSlotCounts.keys(), 1);
+  const courtMinutes = Array.from({ length: courtCount }, (_, index) => {
+    const slots = courtSlotCounts.get(index + 1) ?? 0;
+    return slots > 0
+      ? slots * event.round_minutes + (slots - 1) * event.break_minutes
+      : event.round_minutes;
+  });
+
+  return {
+    name: event.name,
+    venue: event.venue,
+    startsAt: event.starts_at,
+    courtCount,
+    courtMinutes,
+    requestedRoundMinutes: event.round_minutes,
+    breakMinutes: event.break_minutes,
+    notes: event.notes,
+    playerIds: players.map((player) => player.player_id),
+    scheduleLocked: !canChangeEventSchedule({ matchStatuses }),
   };
 }
 

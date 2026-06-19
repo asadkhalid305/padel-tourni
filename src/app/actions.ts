@@ -6,6 +6,12 @@ import { z } from "zod";
 
 import { assertCanRegenerate } from "@/domain/consistency";
 import { canEditDrawLineup } from "@/domain/draw-permissions";
+import {
+  canChangeEventSchedule,
+  canDeleteEvent as canDeleteEventRecord,
+  canEditEventDetails,
+} from "@/domain/event-mutations";
+import { effectiveEventStatus } from "@/domain/event-status";
 import { assertValidLineupSelection } from "@/domain/lineup-validation";
 import { calculateScheduleCapacity } from "@/domain/schedule-calculations";
 import type { ScheduleCapacity } from "@/domain/schedule-calculations";
@@ -18,6 +24,7 @@ import {
 } from "@/lib/supabase/server";
 import { appUserRoleSchema, setAppUserRole } from "@/lib/auth-admin";
 import { eventSchema, playerSchema, scoreSchema } from "@/lib/validation";
+import type { Database } from "@/types/database";
 
 export type ActionState = {
   ok: boolean;
@@ -38,6 +45,24 @@ const roleChangeSchema = z.object({
   appUserId: z.string().uuid(),
   role: appUserRoleSchema,
 });
+
+const eventIdSchema = z.string().uuid();
+type EventInput = z.infer<typeof eventSchema>;
+type ServerClient = NonNullable<ReturnType<typeof createServerClient>>;
+type EventRow = Database["public"]["Tables"]["events"]["Row"];
+type EventPlayerSnapshot = Pick<
+  Database["public"]["Tables"]["event_players"]["Row"],
+  "player_id" | "display_order"
+>;
+type RoundCapacityRow = Pick<
+  Database["public"]["Tables"]["event_rounds"]["Row"],
+  "round_number" | "court_count" | "duration_seconds"
+> & {
+  matches: Pick<
+    Database["public"]["Tables"]["matches"]["Row"],
+    "court_number"
+  >[];
+};
 
 async function assertAdminAction(): Promise<ActionState | null> {
   const user = await requireAdminUser();
@@ -186,8 +211,8 @@ export async function setPlayerAdminRole(
   };
 }
 
-export async function createEvent(formData: FormData) {
-  const parsed = eventSchema.safeParse({
+function parseEventFormData(formData: FormData) {
+  return eventSchema.safeParse({
     name: formData.get("name"),
     venue: formData.get("venue"),
     startsAt: formData.get("startsAt"),
@@ -198,9 +223,162 @@ export async function createEvent(formData: FormData) {
     notes: formData.get("notes"),
     playerIds: formData.getAll("playerIds"),
   });
+}
+
+function eventSeed(event: EventInput) {
+  return (
+    Math.abs(
+      Array.from(`${event.name}:${event.startsAt.toISOString()}`).reduce(
+        (hash, character) => (hash * 31 + character.charCodeAt(0)) | 0,
+        17,
+      ),
+    ) || 1
+  );
+}
+
+async function getOrderedSourcePlayers(
+  client: ServerClient,
+  playerIds: string[],
+) {
+  const { data: sourcePlayers, error: playerError } = await client
+    .from("players")
+    .select("id,name,rating")
+    .in("id", playerIds);
+  if (playerError || sourcePlayers.length !== playerIds.length) {
+    throw new Error("One or more players are invalid.");
+  }
+
+  return playerIds.map((id) => {
+    const player = sourcePlayers.find((candidate) => candidate.id === id);
+    if (!player) throw new Error("Selected player no longer exists.");
+    return player;
+  });
+}
+
+async function insertEventSchedule(options: {
+  client: ServerClient;
+  eventId: string;
+  event: EventInput;
+  capacity: ScheduleCapacity;
+  seed: number;
+}) {
+  const { client, eventId, event, capacity, seed } = options;
+  const orderedPlayers = await getOrderedSourcePlayers(client, event.playerIds);
+  const { data: snapshots, error: snapshotError } = await client
+    .from("event_players")
+    .insert(
+      orderedPlayers.map((player, displayOrder) => ({
+        event_id: eventId,
+        player_id: player.id,
+        name_snapshot: player.name,
+        rating_snapshot: Number(player.rating),
+        display_order: displayOrder,
+      })),
+    )
+    .select("id,name_snapshot,rating_snapshot");
+  if (snapshotError) throw snapshotError;
+
+  const schedule = generateSchedule({
+    players: snapshots.map((player) => ({
+      id: player.id,
+      name: player.name_snapshot,
+      rating: Number(player.rating_snapshot),
+    })),
+    courtCounts: capacity.courtNumbersByRound.map(
+      (courtNumbers) => courtNumbers.length,
+    ),
+    courtNumbersByRound: capacity.courtNumbersByRound,
+    seed,
+  });
+
+  for (const round of schedule.rounds) {
+    const { data: savedRound, error: roundError } = await client
+      .from("event_rounds")
+      .insert({
+        event_id: eventId,
+        round_number: round.roundNumber,
+        court_count: round.courtCount,
+        duration_seconds: capacity.roundMinutes * 60,
+      })
+      .select("id")
+      .single();
+    if (roundError) throw roundError;
+
+    const { error: matchError } = await client.from("matches").insert(
+      round.matches.map((match) => ({
+        event_id: eventId,
+        round_id: savedRound.id,
+        court_number: match.courtNumber,
+        team_one_player_one_id: match.teamOne[0],
+        team_one_player_two_id: match.teamOne[1],
+        team_two_player_one_id: match.teamTwo[0],
+        team_two_player_two_id: match.teamTwo[1],
+        timer_duration_seconds: capacity.roundMinutes * 60,
+      })),
+    );
+    if (matchError) throw matchError;
+  }
+}
+
+function sameOrderedValues(
+  first: readonly unknown[],
+  second: readonly unknown[],
+) {
+  return (
+    first.length === second.length &&
+    first.every((value, index) => value === second[index])
+  );
+}
+
+function courtNumbersByRound(rounds: RoundCapacityRow[]) {
+  return rounds
+    .slice()
+    .sort((first, second) => first.round_number - second.round_number)
+    .map((round) =>
+      round.matches
+        .map((match) => match.court_number)
+        .sort((first, second) => first - second),
+    );
+}
+
+function hasDrawChanges(options: {
+  event: EventRow;
+  players: EventPlayerSnapshot[];
+  rounds: RoundCapacityRow[];
+  nextEvent: EventInput;
+  nextCapacity: ScheduleCapacity;
+}) {
+  const { event, players, rounds, nextEvent, nextCapacity } = options;
+  const existingPlayerIds = players
+    .slice()
+    .sort((first, second) => first.display_order - second.display_order)
+    .map((player) => player.player_id);
+  const existingCourtsByRound = courtNumbersByRound(rounds);
+
+  return (
+    event.round_minutes !== nextCapacity.roundMinutes ||
+    event.break_minutes !== nextEvent.breakMinutes ||
+    !sameOrderedValues(existingPlayerIds, nextEvent.playerIds) ||
+    existingCourtsByRound.length !== nextCapacity.courtNumbersByRound.length ||
+    existingCourtsByRound.some(
+      (courtNumbers, index) =>
+        !sameOrderedValues(
+          courtNumbers,
+          nextCapacity.courtNumbersByRound[index] ?? [],
+        ),
+    )
+  );
+}
+
+function hasStartTimeChange(currentStartsAt: string, nextStartsAt: Date) {
+  return new Date(currentStartsAt).getTime() !== nextStartsAt.getTime();
+}
+
+async function createEventWithErrorPath(formData: FormData, errorPath: string) {
+  const parsed = parseEventFormData(formData);
   if (!parsed.success) {
     redirect(
-      `/events/new?error=${encodeURIComponent(parsed.error.issues[0].message)}`,
+      `${errorPath}?error=${encodeURIComponent(parsed.error.issues[0].message)}`,
     );
   }
   const adminUser = await requireAdminUser();
@@ -210,7 +388,7 @@ export async function createEvent(formData: FormData) {
 
   const client = createServerClient();
   if (!client) {
-    redirect("/events/new?error=Connect%20Supabase%20to%20create%20events");
+    redirect(`${errorPath}?error=Connect%20Supabase%20to%20create%20events`);
   }
 
   let capacity: ScheduleCapacity;
@@ -218,28 +396,12 @@ export async function createEvent(formData: FormData) {
     capacity = calculateScheduleCapacity(parsed.data);
   } catch (error) {
     redirect(
-      `/events/new?error=${encodeURIComponent(
+      `${errorPath}?error=${encodeURIComponent(
         error instanceof Error ? error.message : "Invalid event availability",
       )}`,
     );
   }
-  const seed =
-    Math.abs(
-      Array.from(
-        `${parsed.data.name}:${parsed.data.startsAt.toISOString()}`,
-      ).reduce(
-        (hash, character) => (hash * 31 + character.charCodeAt(0)) | 0,
-        17,
-      ),
-    ) || 1;
-
-  const { data: sourcePlayers, error: playerError } = await client
-    .from("players")
-    .select("id,name,rating")
-    .in("id", parsed.data.playerIds);
-  if (playerError || sourcePlayers.length !== parsed.data.playerIds.length) {
-    redirect("/events/new?error=One%20or%20more%20players%20are%20invalid");
-  }
+  const seed = eventSeed(parsed.data);
 
   const { data: event, error: eventError } = await client
     .from("events")
@@ -247,7 +409,10 @@ export async function createEvent(formData: FormData) {
       name: parsed.data.name,
       venue: parsed.data.venue,
       starts_at: parsed.data.startsAt.toISOString(),
-      status: "scheduled",
+      status: effectiveEventStatus({
+        status: "scheduled",
+        startsAt: parsed.data.startsAt,
+      }),
       seed,
       round_minutes: capacity.roundMinutes,
       break_minutes: parsed.data.breakMinutes,
@@ -256,73 +421,21 @@ export async function createEvent(formData: FormData) {
     .select("id")
     .single();
   if (eventError) {
-    redirect(`/events/new?error=${encodeURIComponent(eventError.message)}`);
+    redirect(`${errorPath}?error=${encodeURIComponent(eventError.message)}`);
   }
 
   try {
-    const orderedPlayers = parsed.data.playerIds.map((id) => {
-      const player = sourcePlayers.find((candidate) => candidate.id === id);
-      if (!player) throw new Error("Selected player no longer exists.");
-      return player;
-    });
-    const { data: snapshots, error: snapshotError } = await client
-      .from("event_players")
-      .insert(
-        orderedPlayers.map((player, displayOrder) => ({
-          event_id: event.id,
-          player_id: player.id,
-          name_snapshot: player.name,
-          rating_snapshot: Number(player.rating),
-          display_order: displayOrder,
-        })),
-      )
-      .select("id,name_snapshot,rating_snapshot");
-    if (snapshotError) throw snapshotError;
-
-    const schedule = generateSchedule({
-      players: snapshots.map((player) => ({
-        id: player.id,
-        name: player.name_snapshot,
-        rating: Number(player.rating_snapshot),
-      })),
-      courtCounts: capacity.courtNumbersByRound.map(
-        (courtNumbers) => courtNumbers.length,
-      ),
-      courtNumbersByRound: capacity.courtNumbersByRound,
+    await insertEventSchedule({
+      client,
+      eventId: event.id,
+      event: parsed.data,
+      capacity,
       seed,
     });
-
-    for (const round of schedule.rounds) {
-      const { data: savedRound, error: roundError } = await client
-        .from("event_rounds")
-        .insert({
-          event_id: event.id,
-          round_number: round.roundNumber,
-          court_count: round.courtCount,
-          duration_seconds: capacity.roundMinutes * 60,
-        })
-        .select("id")
-        .single();
-      if (roundError) throw roundError;
-
-      const { error: matchError } = await client.from("matches").insert(
-        round.matches.map((match) => ({
-          event_id: event.id,
-          round_id: savedRound.id,
-          court_number: match.courtNumber,
-          team_one_player_one_id: match.teamOne[0],
-          team_one_player_two_id: match.teamOne[1],
-          team_two_player_one_id: match.teamTwo[0],
-          team_two_player_two_id: match.teamTwo[1],
-          timer_duration_seconds: capacity.roundMinutes * 60,
-        })),
-      );
-      if (matchError) throw matchError;
-    }
   } catch (error) {
     await client.from("events").delete().eq("id", event.id);
     redirect(
-      `/events/new?error=${encodeURIComponent(
+      `${errorPath}?error=${encodeURIComponent(
         error instanceof Error ? error.message : "Unable to create event",
       )}`,
     );
@@ -331,6 +444,257 @@ export async function createEvent(formData: FormData) {
   revalidatePath("/");
   revalidatePath("/events");
   redirect(`/events/${event.id}`);
+}
+
+export async function createEvent(formData: FormData) {
+  await createEventWithErrorPath(formData, "/events/new");
+}
+
+export async function updateEvent(formData: FormData) {
+  const eventId = eventIdSchema.safeParse(formData.get("eventId"));
+  const parsed = parseEventFormData(formData);
+  if (!eventId.success || !parsed.success) {
+    redirect(
+      `/events/${eventId.success ? eventId.data : ""}/edit?error=${encodeURIComponent(
+        parsed.success
+          ? "Choose a valid event."
+          : parsed.error.issues[0].message,
+      )}`,
+    );
+  }
+  const adminUser = await requireAdminUser();
+  if (!adminUser) {
+    redirect("/events?error=Only%20admins%20can%20edit%20events");
+  }
+
+  const client = createServerClient();
+  if (!client) {
+    redirect(
+      `/events/${eventId.data}/edit?error=Connect%20Supabase%20to%20edit%20events`,
+    );
+  }
+
+  let capacity: ScheduleCapacity;
+  try {
+    capacity = calculateScheduleCapacity(parsed.data);
+  } catch (error) {
+    redirect(
+      `/events/${eventId.data}/edit?error=${encodeURIComponent(
+        error instanceof Error ? error.message : "Invalid event availability",
+      )}`,
+    );
+  }
+
+  const [{ data: event, error: eventError }, playersResult, roundsResult] =
+    await Promise.all([
+      client.from("events").select("*").eq("id", eventId.data).single(),
+      client
+        .from("event_players")
+        .select("player_id,display_order")
+        .eq("event_id", eventId.data),
+      client
+        .from("event_rounds")
+        .select(
+          "round_number,court_count,duration_seconds,matches(court_number)",
+        )
+        .eq("event_id", eventId.data),
+    ]);
+  if (eventError) {
+    redirect(`/events/${eventId.data}/edit?error=Event%20not%20found`);
+  }
+  if (playersResult.error) {
+    redirect(
+      `/events/${eventId.data}/edit?error=${encodeURIComponent(
+        playersResult.error.message,
+      )}`,
+    );
+  }
+  if (roundsResult.error) {
+    redirect(
+      `/events/${eventId.data}/edit?error=${encodeURIComponent(
+        roundsResult.error.message,
+      )}`,
+    );
+  }
+
+  const { data: matches, error: matchesError } = await client
+    .from("matches")
+    .select("status")
+    .eq("event_id", eventId.data);
+  if (matchesError) {
+    redirect(
+      `/events/${eventId.data}/edit?error=${encodeURIComponent(
+        matchesError.message,
+      )}`,
+    );
+  }
+  const matchStatuses = matches.map((match) => match.status);
+  if (
+    !canEditEventDetails({
+      eventStatus: event.status,
+      matchStatuses,
+    })
+  ) {
+    redirect(
+      `/events/${eventId.data}/edit?error=Completed%20event%20data%20is%20locked`,
+    );
+  }
+
+  const drawChanges = hasDrawChanges({
+    event,
+    players: playersResult.data,
+    rounds: roundsResult.data as RoundCapacityRow[],
+    nextEvent: parsed.data,
+    nextCapacity: capacity,
+  });
+  const lockedScheduleChanges =
+    drawChanges || hasStartTimeChange(event.starts_at, parsed.data.startsAt);
+  if (lockedScheduleChanges && !canChangeEventSchedule({ matchStatuses })) {
+    redirect(
+      `/events/${eventId.data}/edit?error=Player%2C%20court%2C%20and%20time%20changes%20are%20locked%20once%20a%20match%20starts`,
+    );
+  }
+
+  const seed = drawChanges ? eventSeed(parsed.data) : event.seed;
+  const { error: updateError } = await client
+    .from("events")
+    .update({
+      name: parsed.data.name,
+      venue: parsed.data.venue,
+      starts_at: parsed.data.startsAt.toISOString(),
+      status: effectiveEventStatus({
+        status: event.status,
+        startsAt: parsed.data.startsAt,
+      }),
+      seed,
+      round_minutes: capacity.roundMinutes,
+      break_minutes: parsed.data.breakMinutes,
+      notes: parsed.data.notes,
+    })
+    .eq("id", eventId.data);
+  if (updateError) {
+    redirect(
+      `/events/${eventId.data}/edit?error=${encodeURIComponent(
+        updateError.message,
+      )}`,
+    );
+  }
+
+  if (drawChanges) {
+    const { error: deleteMatchesError } = await client
+      .from("matches")
+      .delete()
+      .eq("event_id", eventId.data);
+    if (deleteMatchesError) {
+      redirect(
+        `/events/${eventId.data}/edit?error=${encodeURIComponent(
+          deleteMatchesError.message,
+        )}`,
+      );
+    }
+    const { error: deleteRoundsError } = await client
+      .from("event_rounds")
+      .delete()
+      .eq("event_id", eventId.data);
+    if (deleteRoundsError) {
+      redirect(
+        `/events/${eventId.data}/edit?error=${encodeURIComponent(
+          deleteRoundsError.message,
+        )}`,
+      );
+    }
+    const { error: deletePlayersError } = await client
+      .from("event_players")
+      .delete()
+      .eq("event_id", eventId.data);
+    if (deletePlayersError) {
+      redirect(
+        `/events/${eventId.data}/edit?error=${encodeURIComponent(
+          deletePlayersError.message,
+        )}`,
+      );
+    }
+
+    try {
+      await insertEventSchedule({
+        client,
+        eventId: eventId.data,
+        event: parsed.data,
+        capacity,
+        seed,
+      });
+    } catch (error) {
+      redirect(
+        `/events/${eventId.data}/edit?error=${encodeURIComponent(
+          error instanceof Error ? error.message : "Unable to update event",
+        )}`,
+      );
+    }
+  }
+
+  revalidatePath("/");
+  revalidatePath("/events");
+  revalidatePath(`/events/${eventId.data}`);
+  redirect(`/events/${eventId.data}`);
+}
+
+export async function duplicateEvent(formData: FormData) {
+  const sourceEventId = eventIdSchema.safeParse(formData.get("sourceEventId"));
+  const errorPath = sourceEventId.success
+    ? `/events/${sourceEventId.data}/duplicate`
+    : "/events/new";
+  await createEventWithErrorPath(formData, errorPath);
+}
+
+export async function deleteEvent(
+  _previous: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const parsed = eventIdSchema.safeParse(formData.get("eventId"));
+  if (!parsed.success) {
+    return { ok: false, message: "Choose a valid event to delete." };
+  }
+  const authorizationError = await assertAdminAction();
+  if (authorizationError) return authorizationError;
+
+  const client = createServerClient();
+  if (!client) return unavailable;
+
+  const [{ data: event, error: eventError }, matchesResult] = await Promise.all(
+    [
+      client
+        .from("events")
+        .select("status,starts_at")
+        .eq("id", parsed.data)
+        .single(),
+      client.from("matches").select("status").eq("event_id", parsed.data),
+    ],
+  );
+  if (eventError) return { ok: false, message: eventError.message };
+  if (matchesResult.error) {
+    return { ok: false, message: matchesResult.error.message };
+  }
+  if (
+    !canDeleteEventRecord({
+      eventStatus: effectiveEventStatus({
+        status: event.status,
+        startsAt: event.starts_at,
+      }),
+      matchStatuses: matchesResult.data.map((match) => match.status),
+    })
+  ) {
+    return {
+      ok: false,
+      message: "Only fully scheduled events can be deleted.",
+    };
+  }
+
+  const { error } = await client.from("events").delete().eq("id", parsed.data);
+  if (error) return { ok: false, message: error.message };
+
+  revalidatePath("/");
+  revalidatePath("/events");
+  redirect("/events");
 }
 
 export async function saveScore(
@@ -352,12 +716,33 @@ export async function saveScore(
   const client = createServerClient();
   if (!client) return unavailable;
 
-  const { data: existing, error: readError } = await client
-    .from("matches")
-    .select("status")
-    .eq("id", parsed.data.matchId)
-    .single();
+  const [{ data: existing, error: readError }, eventResult] = await Promise.all(
+    [
+      client
+        .from("matches")
+        .select("status")
+        .eq("id", parsed.data.matchId)
+        .eq("event_id", parsed.data.eventId)
+        .single(),
+      client
+        .from("events")
+        .select("status,starts_at")
+        .eq("id", parsed.data.eventId)
+        .single(),
+    ],
+  );
   if (readError) return { ok: false, message: readError.message };
+  if (eventResult.error) {
+    return { ok: false, message: eventResult.error.message };
+  }
+  if (
+    effectiveEventStatus({
+      status: eventResult.data.status,
+      startsAt: eventResult.data.starts_at,
+    }) !== "live"
+  ) {
+    return { ok: false, message: "The event must be live to record scores." };
+  }
   if (existing.status === "completed") {
     return { ok: false, message: "Completed scores are locked." };
   }
@@ -387,12 +772,26 @@ export async function updateTimer(formData: FormData) {
   const eventId = String(formData.get("eventId"));
   const operation = String(formData.get("operation"));
   const now = new Date().toISOString();
-  const { data: match } = await client
-    .from("matches")
-    .select("*")
-    .eq("id", matchId)
-    .single();
-  if (!match || match.status === "completed") return;
+  const [{ data: match }, { data: event }] = await Promise.all([
+    client
+      .from("matches")
+      .select("*")
+      .eq("id", matchId)
+      .eq("event_id", eventId)
+      .single(),
+    client.from("events").select("status,starts_at").eq("id", eventId).single(),
+  ]);
+  if (
+    !match ||
+    !event ||
+    match.status === "completed" ||
+    effectiveEventStatus({
+      status: event.status,
+      startsAt: event.starts_at,
+    }) !== "live"
+  ) {
+    return;
+  }
 
   if (operation === "start" && !match.timer_started_at) {
     await client
@@ -446,7 +845,7 @@ export async function updateMatchLineup(
 
   const { data: event, error: eventError } = await client
     .from("events")
-    .select("status")
+    .select("status,starts_at")
     .eq("id", eventId)
     .single();
   if (eventError) return { ok: false, message: eventError.message };
@@ -454,7 +853,10 @@ export async function updateMatchLineup(
   if (
     !canEditDrawLineup({
       canManage: true,
-      eventStatus: event.status,
+      eventStatus: effectiveEventStatus({
+        status: event.status,
+        startsAt: event.starts_at,
+      }),
       matchStatus: match.status,
     })
   ) {

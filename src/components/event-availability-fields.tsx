@@ -9,17 +9,39 @@ type CourtTimeMode = "equal" | "different";
 
 export function EventAvailabilityFields({
   courtCount: controlledCourtCount,
+  initialCourtMinutes,
+  initialRequestedRoundMinutes,
+  initialBreakMinutes,
+  disabled = false,
   onCourtCountChange,
 }: {
   courtCount?: number;
+  initialCourtMinutes?: number[];
+  initialRequestedRoundMinutes?: number;
+  initialBreakMinutes?: number;
+  disabled?: boolean;
   onCourtCountChange?: (courtCount: number) => void;
 }) {
-  const [localCourtCount, setLocalCourtCount] = useState(2);
-  const [courtTimeMode, setCourtTimeMode] = useState<CourtTimeMode>("equal");
-  const [equalCourtMinutes, setEqualCourtMinutes] = useState(120);
-  const [courtMinutes, setCourtMinutes] = useState([120, 120]);
-  const [requestedRoundMinutes, setRequestedRoundMinutes] = useState(20);
-  const [breakMinutes, setBreakMinutes] = useState(3);
+  const defaultCourtMinutes =
+    initialCourtMinutes && initialCourtMinutes.length
+      ? initialCourtMinutes
+      : [120, 120];
+  const [localCourtCount, setLocalCourtCount] = useState(
+    controlledCourtCount ?? defaultCourtMinutes.length,
+  );
+  const [courtTimeMode, setCourtTimeMode] = useState<CourtTimeMode>(() =>
+    defaultCourtMinutes.every((minutes) => minutes === defaultCourtMinutes[0])
+      ? "equal"
+      : "different",
+  );
+  const [equalCourtMinutes, setEqualCourtMinutes] = useState(
+    defaultCourtMinutes[0] ?? 120,
+  );
+  const [courtMinutes, setCourtMinutes] = useState(defaultCourtMinutes);
+  const [requestedRoundMinutes, setRequestedRoundMinutes] = useState(
+    initialRequestedRoundMinutes ?? 20,
+  );
+  const [breakMinutes, setBreakMinutes] = useState(initialBreakMinutes ?? 3);
   const courtCount = controlledCourtCount ?? localCourtCount;
   const readNumber = (value: number) => (Number.isNaN(value) ? 0 : value);
   const effectiveCourtMinutes =
@@ -62,11 +84,30 @@ export function EventAvailabilityFields({
 
   return (
     <>
+      {disabled ? (
+        <>
+          <input type="hidden" name="courtCount" value={courtCount} />
+          {effectiveCourtMinutes.map((minutes, index) => (
+            <input
+              key={index}
+              type="hidden"
+              name="courtMinutes"
+              value={minutes}
+            />
+          ))}
+          <input
+            type="hidden"
+            name="requestedRoundMinutes"
+            value={requestedRoundMinutes}
+          />
+          <input type="hidden" name="breakMinutes" value={breakMinutes} />
+        </>
+      ) : null}
       <label className="block">
         <span className="field-label">Number of courts</span>
         <input
           className="field"
-          name="courtCount"
+          name={disabled ? undefined : "courtCount"}
           type="number"
           min="1"
           max="20"
@@ -75,6 +116,7 @@ export function EventAvailabilityFields({
             updateCourtCount(event.currentTarget.valueAsNumber)
           }
           required
+          disabled={disabled}
         />
       </label>
       <label className="block">
@@ -85,6 +127,7 @@ export function EventAvailabilityFields({
           onChange={(event) =>
             setCourtTimeMode(event.currentTarget.value as CourtTimeMode)
           }
+          disabled={disabled}
         >
           <option value="equal">Equal time for each court</option>
           <option value="different">Different time per court</option>
@@ -105,15 +148,18 @@ export function EventAvailabilityFields({
               )
             }
             required
+            disabled={disabled}
           />
-          {effectiveCourtMinutes.map((minutes, index) => (
-            <input
-              key={index}
-              name="courtMinutes"
-              type="hidden"
-              value={minutes}
-            />
-          ))}
+          {!disabled
+            ? effectiveCourtMinutes.map((minutes, index) => (
+                <input
+                  key={index}
+                  name="courtMinutes"
+                  type="hidden"
+                  value={minutes}
+                />
+              ))
+            : null}
         </label>
       ) : (
         <div className="grid gap-4 sm:col-span-2 sm:grid-cols-2">
@@ -122,7 +168,7 @@ export function EventAvailabilityFields({
               <span className="field-label">Court {index + 1} minutes</span>
               <input
                 className="field"
-                name="courtMinutes"
+                name={disabled ? undefined : "courtMinutes"}
                 type="number"
                 min="5"
                 max="1440"
@@ -131,6 +177,7 @@ export function EventAvailabilityFields({
                   updateCourtMinutes(index, event.currentTarget.valueAsNumber)
                 }
                 required
+                disabled={disabled}
               />
             </label>
           ))}
@@ -140,7 +187,7 @@ export function EventAvailabilityFields({
         <span className="field-label">Preferred match minutes</span>
         <input
           className="field"
-          name="requestedRoundMinutes"
+          name={disabled ? undefined : "requestedRoundMinutes"}
           type="number"
           min="5"
           max="120"
@@ -151,13 +198,14 @@ export function EventAvailabilityFields({
             )
           }
           required
+          disabled={disabled}
         />
       </label>
       <label className="block">
         <span className="field-label">Rest minutes</span>
         <input
           className="field"
-          name="breakMinutes"
+          name={disabled ? undefined : "breakMinutes"}
           type="number"
           min="0"
           max="30"
@@ -166,6 +214,7 @@ export function EventAvailabilityFields({
             setBreakMinutes(readNumber(event.currentTarget.valueAsNumber))
           }
           required
+          disabled={disabled}
         />
       </label>
       <div

@@ -10,9 +10,11 @@ const initialState: ActionState = { ok: false, message: "" };
 export function ScoreForm({
   matchId,
   eventId,
+  disabled = false,
 }: {
   matchId: string;
   eventId: string;
+  disabled?: boolean;
 }) {
   const [state, action, pending] = useActionState(saveScore, initialState);
   return (
@@ -29,6 +31,7 @@ export function ScoreForm({
           max="99"
           defaultValue="0"
           required
+          disabled={disabled || pending}
         />
         <span className="font-black text-slate-300">:</span>
         <input
@@ -40,14 +43,21 @@ export function ScoreForm({
           max="99"
           defaultValue="0"
           required
+          disabled={disabled || pending}
         />
       </div>
-      <Button className="mt-3 w-full" variant="secondary" disabled={pending}>
+      <Button
+        className="mt-3 w-full"
+        variant="secondary"
+        disabled={disabled || pending}
+      >
         {pending ? (
           <>
             <Spinner />
             Saving score...
           </>
+        ) : disabled ? (
+          "Available when event is live"
         ) : (
           "Complete match"
         )}

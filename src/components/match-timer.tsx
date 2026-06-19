@@ -20,7 +20,9 @@ export function MatchTimer({
   startedAt,
   pausedAt,
   accumulatedPauseSeconds,
+  initialNow,
   canManage,
+  disabled = false,
 }: {
   matchId: string;
   eventId: string;
@@ -28,9 +30,11 @@ export function MatchTimer({
   startedAt: string | null;
   pausedAt: string | null;
   accumulatedPauseSeconds: number;
+  initialNow: string;
   canManage: boolean;
+  disabled?: boolean;
 }) {
-  const [now, setNow] = useState(() => new Date().toISOString());
+  const [now, setNow] = useState(initialNow);
   useEffect(() => {
     const interval = window.setInterval(
       () => setNow(new Date().toISOString()),
@@ -73,6 +77,7 @@ export function MatchTimer({
             className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-white/10 text-sm font-bold text-white shadow-none hover:bg-white/15"
             variant="ghost"
             pendingLabel="Updating timer..."
+            disabled={disabled}
           >
             {!startedAt ? (
               <Play size={17} />
@@ -81,11 +86,13 @@ export function MatchTimer({
             ) : (
               <Pause size={17} />
             )}
-            {!startedAt
-              ? "Start timer"
-              : pausedAt
-                ? "Resume timer"
-                : "Pause timer"}
+            {disabled
+              ? "Available when event is live"
+              : !startedAt
+                ? "Start timer"
+                : pausedAt
+                  ? "Resume timer"
+                  : "Pause timer"}
           </PendingSubmitButton>
         </form>
       ) : null}

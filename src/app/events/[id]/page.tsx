@@ -1,5 +1,4 @@
 import {
-  ArrowLeft,
   CalendarClock,
   CircleCheckBig,
   Clock3,
@@ -12,12 +11,16 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { AccessLimited } from "@/components/access-limited";
+import { EventAdminActions } from "@/components/event-admin-actions";
 import { MatchEditor } from "@/components/match-editor";
 import { MatchTimer } from "@/components/match-timer";
+import { PageBackLink } from "@/components/page-back-link";
 import { ScoreForm } from "@/components/score-form";
 import { Badge, Card } from "@/components/ui";
 import { diagnoseSchedule } from "@/domain/diagnostics";
 import { canEditDrawLineup } from "@/domain/draw-permissions";
+import { canDeleteEvent } from "@/domain/event-mutations";
+import { canManageLiveMatches } from "@/domain/event-status";
 import { getEditableLineupPlayerIds } from "@/domain/lineup-validation";
 import type { ScheduledMatch } from "@/domain/types";
 import { canViewPrivateData, getEvent, type EventMatch } from "@/lib/data";
@@ -63,6 +66,11 @@ export default async function EventPage({
   const event = await getEvent(id);
   if (!event) notFound();
   const canManage = user ? isAdminRole(user.role) : false;
+  const initialTimerNow = new Date().toISOString();
+  const liveControlsEnabled = canManageLiveMatches({
+    canManage,
+    eventStatus: event.status,
+  });
 
   const playerById = new Map(
     event.players.map((player) => [player.id, player]),
@@ -75,6 +83,15 @@ export default async function EventPage({
     event.completedMatches.map((match) => [match.id, match]),
   );
   const allMatches = event.schedule.rounds.flatMap((round) => round.matches);
+  const canDeleteCurrentEvent =
+    canManage &&
+    canDeleteEvent({
+      eventStatus: event.status,
+      matchStatuses: allMatches.map((match) => {
+        const enriched = match as ScheduledMatch & Partial<EventMatch>;
+        return enriched.status ?? "scheduled";
+      }),
+    });
   const courtNumbers = [
     ...new Set(allMatches.map((match) => match.courtNumber)),
   ].sort((first, second) => first - second);
@@ -174,12 +191,7 @@ export default async function EventPage({
 
   return (
     <div className="space-y-6">
-      <Link
-        href="/events"
-        className="inline-flex items-center gap-2 text-sm font-bold text-slate-500 hover:text-[var(--ink)]"
-      >
-        <ArrowLeft size={17} /> All events
-      </Link>
+      <PageBackLink href="/events" label="All events" />
 
       <section className="court-lines overflow-hidden rounded-[1.6rem] bg-[var(--ink)] p-6 text-white shadow-xl sm:p-8">
         <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
@@ -191,6 +203,15 @@ export default async function EventPage({
             <p className="mt-3 text-sm text-white/60 sm:text-base">
               {formatDate(event.startsAt)} · {event.venue || "Venue not set"}
             </p>
+            {canManage ? (
+              <div className="mt-5">
+                <EventAdminActions
+                  eventId={event.id}
+                  canDelete={canDeleteCurrentEvent}
+                  showDelete={event.status === "scheduled"}
+                />
+              </div>
+            ) : null}
           </div>
           <div className="grid grid-cols-3 gap-3">
             {[
@@ -423,83 +444,99 @@ export default async function EventPage({
       ) : null}
 
       {view === "live" ? (
-        <div className="grid gap-4 xl:grid-cols-2">
-          {allMatches.map((match) => {
-            const enriched = match as ScheduledMatch & Partial<EventMatch>;
-            const completed = completedById.get(match.id);
-            const status =
-              enriched.status ?? (completed ? "completed" : "scheduled");
-            const teamOneScore =
-              enriched.teamOneScore ?? completed?.teamOneScore ?? 0;
-            const teamTwoScore =
-              enriched.teamTwoScore ?? completed?.teamTwoScore ?? 0;
-            return (
-              <Card
-                key={match.id}
-                className={status === "live" ? "ring-2 ring-rose-300" : ""}
-              >
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-black uppercase tracking-[0.16em] text-[var(--green)]">
-                    Round {match.roundNumber} · Court {match.courtNumber}
-                  </span>
-                  <Badge tone={statusTone(status)}>{status}</Badge>
-                </div>
-                <div className="mt-4 grid grid-cols-[1fr_auto_1fr] items-center gap-3">
-                  <div className="text-center">
-                    {match.teamOne.map((playerId) => (
-                      <p key={playerId} className="text-sm font-bold">
-                        {playerById.get(playerId)?.name}
-                      </p>
-                    ))}
+        <div className="space-y-4">
+          {canManage && !liveControlsEnabled ? (
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-bold text-amber-900">
+              Match timers and scores unlock when the event start time arrives.
+              Edit the event start time first if play is beginning now.
+            </div>
+          ) : null}
+          <div className="grid gap-4 xl:grid-cols-2">
+            {allMatches.map((match) => {
+              const enriched = match as ScheduledMatch & Partial<EventMatch>;
+              const completed = completedById.get(match.id);
+              const status =
+                enriched.status ?? (completed ? "completed" : "scheduled");
+              const teamOneScore =
+                enriched.teamOneScore ?? completed?.teamOneScore ?? 0;
+              const teamTwoScore =
+                enriched.teamTwoScore ?? completed?.teamTwoScore ?? 0;
+              return (
+                <Card
+                  key={match.id}
+                  className={status === "live" ? "ring-2 ring-rose-300" : ""}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-black uppercase tracking-[0.16em] text-[var(--green)]">
+                      Round {match.roundNumber} · Court {match.courtNumber}
+                    </span>
+                    <Badge tone={statusTone(status)}>{status}</Badge>
                   </div>
-                  <span className="text-sm font-black text-slate-300">VS</span>
-                  <div className="text-center">
-                    {match.teamTwo.map((playerId) => (
-                      <p key={playerId} className="text-sm font-bold">
-                        {playerById.get(playerId)?.name}
-                      </p>
-                    ))}
-                  </div>
-                </div>
-                {status === "completed" ? (
-                  <div className="mt-5 rounded-2xl bg-emerald-50 p-4 text-center">
-                    <CircleCheckBig
-                      className="mx-auto text-emerald-600"
-                      size={22}
-                    />
-                    <p className="mt-2 text-3xl font-black text-[var(--ink)]">
-                      {teamOneScore} : {teamTwoScore}
-                    </p>
-                    <p className="text-xs font-bold text-emerald-700">
-                      Final score locked
-                    </p>
-                  </div>
-                ) : (
-                  <>
-                    <div className="mt-5">
-                      <MatchTimer
-                        matchId={match.id}
-                        eventId={event.id}
-                        durationSeconds={
-                          enriched.timerDurationSeconds ??
-                          event.roundMinutes * 60
-                        }
-                        startedAt={enriched.timerStartedAt ?? null}
-                        pausedAt={enriched.timerPausedAt ?? null}
-                        accumulatedPauseSeconds={
-                          enriched.timerAccumulatedPauseSeconds ?? 0
-                        }
-                        canManage={canManage}
-                      />
+                  <div className="mt-4 grid grid-cols-[1fr_auto_1fr] items-center gap-3">
+                    <div className="text-center">
+                      {match.teamOne.map((playerId) => (
+                        <p key={playerId} className="text-sm font-bold">
+                          {playerById.get(playerId)?.name}
+                        </p>
+                      ))}
                     </div>
-                    {canManage ? (
-                      <ScoreForm matchId={match.id} eventId={event.id} />
-                    ) : null}
-                  </>
-                )}
-              </Card>
-            );
-          })}
+                    <span className="text-sm font-black text-slate-300">
+                      VS
+                    </span>
+                    <div className="text-center">
+                      {match.teamTwo.map((playerId) => (
+                        <p key={playerId} className="text-sm font-bold">
+                          {playerById.get(playerId)?.name}
+                        </p>
+                      ))}
+                    </div>
+                  </div>
+                  {status === "completed" ? (
+                    <div className="mt-5 rounded-2xl bg-emerald-50 p-4 text-center">
+                      <CircleCheckBig
+                        className="mx-auto text-emerald-600"
+                        size={22}
+                      />
+                      <p className="mt-2 text-3xl font-black text-[var(--ink)]">
+                        {teamOneScore} : {teamTwoScore}
+                      </p>
+                      <p className="text-xs font-bold text-emerald-700">
+                        Final score locked
+                      </p>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="mt-5">
+                        <MatchTimer
+                          matchId={match.id}
+                          eventId={event.id}
+                          durationSeconds={
+                            enriched.timerDurationSeconds ??
+                            event.roundMinutes * 60
+                          }
+                          startedAt={enriched.timerStartedAt ?? null}
+                          pausedAt={enriched.timerPausedAt ?? null}
+                          accumulatedPauseSeconds={
+                            enriched.timerAccumulatedPauseSeconds ?? 0
+                          }
+                          initialNow={initialTimerNow}
+                          canManage={canManage}
+                          disabled={!liveControlsEnabled}
+                        />
+                      </div>
+                      {canManage ? (
+                        <ScoreForm
+                          matchId={match.id}
+                          eventId={event.id}
+                          disabled={!liveControlsEnabled}
+                        />
+                      ) : null}
+                    </>
+                  )}
+                </Card>
+              );
+            })}
+          </div>
         </div>
       ) : null}
 

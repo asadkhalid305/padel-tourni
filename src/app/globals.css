@@ -85,6 +85,15 @@ a {
   outline: none;
 }
 
+.field:disabled,
+.score-field:disabled {
+  cursor: not-allowed;
+  border-color: #e2e8f0;
+  background: #f1f5f9;
+  color: #64748b;
+  opacity: 0.8;
+}
+
 .score-field {
   min-width: 0;
   border: 1px solid #dce5df;

@@ -11,6 +11,7 @@ import {
   calculateMinimumEventPlayerCount,
   formatMinimumEventPlayerMessage,
 } from "@/domain/event-requirements";
+import type { EventFormInitialValues } from "@/lib/data";
 
 type EventFormPlayer = {
   id: string;
@@ -23,15 +24,23 @@ export function EventForm({
   players,
   configured,
   serverError,
+  initialValues,
+  submitLabel = "Generate event",
+  pendingLabel = "Generating event...",
+  scheduleLocked = initialValues?.scheduleLocked ?? false,
 }: {
   action: (formData: FormData) => void | Promise<void>;
   players: EventFormPlayer[];
   configured: boolean;
   serverError?: ReactNode;
+  initialValues?: EventFormInitialValues;
+  submitLabel?: ReactNode;
+  pendingLabel?: ReactNode;
+  scheduleLocked?: boolean;
 }) {
-  const [courtCount, setCourtCount] = useState(2);
+  const [courtCount, setCourtCount] = useState(initialValues?.courtCount ?? 2);
   const [selectedPlayerIds, setSelectedPlayerIds] = useState<Set<string>>(
-    new Set(),
+    new Set(initialValues?.playerIds ?? []),
   );
   const [validationError, setValidationError] = useState("");
   const minimumPlayerCount = calculateMinimumEventPlayerCount(courtCount);
@@ -93,6 +102,7 @@ export function EventForm({
                   className="field"
                   name="name"
                   placeholder="Sunday court social"
+                  defaultValue={initialValues?.name}
                   required
                 />
               </label>
@@ -102,6 +112,7 @@ export function EventForm({
                   className="field"
                   name="venue"
                   placeholder="Padel club"
+                  defaultValue={initialValues?.venue}
                 />
               </label>
               <label className="block">
@@ -110,11 +121,30 @@ export function EventForm({
                   className="field"
                   name="startsAt"
                   type="datetime-local"
+                  defaultValue={
+                    initialValues?.startsAt
+                      ? toDateTimeLocalValue(initialValues.startsAt)
+                      : undefined
+                  }
                   required
+                  disabled={scheduleLocked}
                 />
+                {scheduleLocked ? (
+                  <input
+                    type="hidden"
+                    name="startsAt"
+                    value={initialValues?.startsAt ?? ""}
+                  />
+                ) : null}
               </label>
               <EventAvailabilityFields
                 courtCount={courtCount}
+                initialCourtMinutes={initialValues?.courtMinutes}
+                initialRequestedRoundMinutes={
+                  initialValues?.requestedRoundMinutes
+                }
+                initialBreakMinutes={initialValues?.breakMinutes}
+                disabled={scheduleLocked}
                 onCourtCountChange={(nextCourtCount) => {
                   setCourtCount(nextCourtCount);
                   setValidationError("");
@@ -126,6 +156,7 @@ export function EventForm({
                   className="field min-h-24 resize-y"
                   name="notes"
                   placeholder="Format, arrival notes, or house rules"
+                  defaultValue={initialValues?.notes}
                 />
               </label>
             </div>
@@ -137,9 +168,20 @@ export function EventForm({
               <h2 className="text-xl font-black">Select players</h2>
             </div>
             <p className="mt-1 text-sm text-slate-500">
-              Choose at least {minimumPlayerCount}. Names and ratings are
-              snapshotted now.
+              {scheduleLocked
+                ? "The roster is locked because match activity has started."
+                : `Choose at least ${minimumPlayerCount}. Names and ratings are snapshotted now.`}
             </p>
+            {scheduleLocked
+              ? [...selectedPlayerIds].map((playerId) => (
+                  <input
+                    key={playerId}
+                    type="hidden"
+                    name="playerIds"
+                    value={playerId}
+                  />
+                ))
+              : null}
             <div className="mt-5 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
               {players.map((player) => (
                 <label
@@ -147,13 +189,14 @@ export function EventForm({
                   className="flex cursor-pointer items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 has-[:checked]:border-emerald-500 has-[:checked]:bg-emerald-50"
                 >
                   <input
-                    name="playerIds"
                     type="checkbox"
                     value={player.id}
                     checked={selectedPlayerIds.has(player.id)}
                     onChange={(event) =>
                       togglePlayer(player.id, event.currentTarget.checked)
                     }
+                    disabled={scheduleLocked}
+                    name={scheduleLocked ? undefined : "playerIds"}
                     className="size-4 accent-emerald-700"
                   />
                   <span>
@@ -197,9 +240,9 @@ export function EventForm({
               className="mt-7 w-full"
               variant="secondary"
               disabled={!configured}
-              pendingLabel="Generating event..."
+              pendingLabel={pendingLabel}
             >
-              Generate event
+              {submitLabel}
             </PendingSubmitButton>
             <EventCreationProgress />
           </Card>
@@ -207,6 +250,16 @@ export function EventForm({
       </form>
     </>
   );
+}
+
+function toDateTimeLocalValue(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+
+  const offsetDate = new Date(
+    date.getTime() - date.getTimezoneOffset() * 60000,
+  );
+  return offsetDate.toISOString().slice(0, 16);
 }
 
 function EventCreationProgress() {
