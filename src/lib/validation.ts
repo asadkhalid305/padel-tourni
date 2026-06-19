@@ -1,5 +1,10 @@
 import { z } from "zod";
 
+import {
+  calculateMinimumEventPlayerCount,
+  formatMinimumEventPlayerMessage,
+} from "@/domain/event-requirements";
+
 const optionalEmailSchema = z.preprocess((value) => {
   if (typeof value !== "string") return value;
   const trimmed = value.trim().toLowerCase();
@@ -33,11 +38,28 @@ export const eventSchema = z
     requestedRoundMinutes: z.coerce.number().int().min(5).max(120),
     breakMinutes: z.coerce.number().int().min(0).max(30),
     notes: z.string().trim().max(1000),
-    playerIds: z.array(z.string().uuid()).min(4),
+    playerIds: z.array(z.string().uuid()),
   })
-  .refine((event) => event.courtMinutes.length === event.courtCount, {
-    message: "Enter availability minutes for each court.",
-    path: ["courtMinutes"],
+  .superRefine((event, context) => {
+    if (event.courtMinutes.length !== event.courtCount) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Enter availability minutes for each court.",
+        path: ["courtMinutes"],
+      });
+    }
+
+    const requiredPlayers = calculateMinimumEventPlayerCount(event.courtCount);
+    if (event.playerIds.length < requiredPlayers) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: formatMinimumEventPlayerMessage({
+          courtCount: event.courtCount,
+          selectedPlayerCount: event.playerIds.length,
+        }),
+        path: ["playerIds"],
+      });
+    }
   });
 
 export const scoreSchema = z.object({

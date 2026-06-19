@@ -18,6 +18,7 @@ import { ScoreForm } from "@/components/score-form";
 import { Badge, Card } from "@/components/ui";
 import { diagnoseSchedule } from "@/domain/diagnostics";
 import { canEditDrawLineup } from "@/domain/draw-permissions";
+import { getEditableLineupPlayerIds } from "@/domain/lineup-validation";
 import type { ScheduledMatch } from "@/domain/types";
 import { canViewPrivateData, getEvent, type EventMatch } from "@/lib/data";
 import { isAdminRole } from "@/lib/roles";
@@ -103,6 +104,73 @@ export default async function EventPage({
     { value: "live", label: "Live" },
     { value: "standings", label: "Standings" },
   ];
+  const drawTransparencyCard = (
+    <Card className="xl:col-span-2">
+      <div className="flex items-center gap-2">
+        <ListChecks size={19} className="text-[var(--green)]" />
+        <h2 className="text-xl font-black">Draw transparency</h2>
+      </div>
+      <div className="mt-3 grid gap-3 text-sm leading-6 text-slate-600 lg:grid-cols-2">
+        <p>
+          The draw first balances how often every player appears, then limits
+          back-to-back rests, avoids repeat partners and opponents, and then
+          uses snapshot ratings to make each match as even as possible.
+        </p>
+        <p>
+          For each match, the scheduler compares the possible team pairs and
+          prefers the lowest gap between the two team rating totals, for example
+          8+5 against 7+6.
+        </p>
+      </div>
+      <div className="mt-4 rounded-xl bg-emerald-50 p-3 text-sm font-semibold leading-6 text-emerald-900">
+        Avg rating gap is not the gap between partners. It measures how close
+        each player&apos;s matches were between the two sides. If a perfectly
+        balanced pairing is not possible, the draw uses the fairest available
+        compromise; ask an admin if a draw should be changed.
+      </div>
+      <div className="mt-5 overflow-x-auto">
+        <table className="w-full min-w-[820px] border-collapse text-sm">
+          <thead className="bg-slate-50 text-left text-xs uppercase tracking-[0.12em] text-slate-500">
+            <tr>
+              {[
+                "Player",
+                "Apps",
+                "Rests",
+                "Max rest",
+                "Repeat partners",
+                "Repeat opponents",
+                "Avg rating gap",
+              ].map((heading) => (
+                <th key={heading} className="px-4 py-3 font-black">
+                  {heading}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {diagnostics.playerFairness.map((player) => (
+              <tr
+                key={player.playerId}
+                className="border-b border-slate-100 last:border-0"
+              >
+                <td className="px-4 py-3 font-bold text-[var(--ink)]">
+                  {player.playerName}
+                </td>
+                <td className="px-4 py-3">{player.appearances}</td>
+                <td className="px-4 py-3">{player.rests}</td>
+                <td className="px-4 py-3">{player.maxConsecutiveRests}</td>
+                <td className="px-4 py-3">{player.repeatedPartners}</td>
+                <td className="px-4 py-3">{player.repeatedOpponents}</td>
+                <td className="px-4 py-3">
+                  {player.averageRatingDifference.toFixed(1)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Card>
+  );
 
   return (
     <div className="space-y-6">
@@ -226,75 +294,7 @@ export default async function EventPage({
                 : diagnostics.issues.join(" ")}
             </div>
           </Card>
-          <Card className="xl:col-span-2">
-            <div className="flex items-center gap-2">
-              <ListChecks size={19} className="text-[var(--green)]" />
-              <h2 className="text-xl font-black">Draw transparency</h2>
-            </div>
-            <div className="mt-3 grid gap-3 text-sm leading-6 text-slate-600 lg:grid-cols-2">
-              <p>
-                The draw first balances how often every player appears, then
-                limits back-to-back rests, avoids repeat partners and opponents,
-                and then uses snapshot ratings to make each match as even as
-                possible.
-              </p>
-              <p>
-                For each match, the scheduler compares the possible team pairs
-                and prefers the lowest gap between the two team rating totals,
-                for example 8+5 against 7+6.
-              </p>
-            </div>
-            <div className="mt-4 rounded-xl bg-emerald-50 p-3 text-sm font-semibold leading-6 text-emerald-900">
-              Avg rating gap is not the gap between partners. It measures how
-              close each player&apos;s matches were between the two sides. If a
-              perfectly balanced pairing is not possible, the draw uses the
-              fairest available compromise; ask an admin if a draw should be
-              changed.
-            </div>
-            <div className="mt-5 overflow-x-auto">
-              <table className="w-full min-w-[820px] border-collapse text-sm">
-                <thead className="bg-slate-50 text-left text-xs uppercase tracking-[0.12em] text-slate-500">
-                  <tr>
-                    {[
-                      "Player",
-                      "Apps",
-                      "Rests",
-                      "Max rest",
-                      "Repeat partners",
-                      "Repeat opponents",
-                      "Avg rating gap",
-                    ].map((heading) => (
-                      <th key={heading} className="px-4 py-3 font-black">
-                        {heading}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {diagnostics.playerFairness.map((player) => (
-                    <tr
-                      key={player.playerId}
-                      className="border-b border-slate-100 last:border-0"
-                    >
-                      <td className="px-4 py-3 font-bold text-[var(--ink)]">
-                        {player.playerName}
-                      </td>
-                      <td className="px-4 py-3">{player.appearances}</td>
-                      <td className="px-4 py-3">{player.rests}</td>
-                      <td className="px-4 py-3">
-                        {player.maxConsecutiveRests}
-                      </td>
-                      <td className="px-4 py-3">{player.repeatedPartners}</td>
-                      <td className="px-4 py-3">{player.repeatedOpponents}</td>
-                      <td className="px-4 py-3">
-                        {player.averageRatingDifference.toFixed(1)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </Card>
+          {drawTransparencyCard}
         </div>
       ) : null}
 
@@ -318,60 +318,107 @@ export default async function EventPage({
                   const completed = completedById.get(match.id);
                   const status =
                     enriched.status ?? (completed ? "completed" : "scheduled");
+                  const editablePlayerIds = getEditableLineupPlayerIds({
+                    matchId: match.id,
+                    eventPlayerIds: event.players.map((player) => player.id),
+                    roundMatches: round.matches.map((roundMatch) => ({
+                      id: roundMatch.id,
+                      playerIds: [...roundMatch.teamOne, ...roundMatch.teamTwo],
+                    })),
+                  });
+                  const editablePlayerIdSet = new Set(editablePlayerIds);
+                  const playerOptions = event.players.filter((player) =>
+                    editablePlayerIdSet.has(player.id),
+                  );
                   return (
-                    <Card key={match.id}>
+                    <Card
+                      key={match.id}
+                      className="border-emerald-950/10 bg-white p-0"
+                    >
                       <div className="flex items-center justify-between">
-                        <span className="text-xs font-black uppercase tracking-[0.16em] text-[var(--green)]">
+                        <span className="px-5 pt-5 text-xs font-black uppercase tracking-[0.16em] text-[var(--green)]">
                           Court {match.courtNumber}
                         </span>
-                        <Badge tone={statusTone(status)}>{status}</Badge>
+                        <span className="px-5 pt-5">
+                          <Badge tone={statusTone(status)}>{status}</Badge>
+                        </span>
                       </div>
-                      <div className="mt-4 grid grid-cols-[1fr_auto_1fr] items-center gap-3">
-                        <div className="rounded-2xl bg-slate-50 p-4 text-center">
+                      <div className="grid grid-cols-[1fr_auto_1fr] items-stretch gap-3 p-5">
+                        <div className="rounded-2xl border border-emerald-100 bg-emerald-50/70 p-4 text-center">
+                          <p className="mb-2 text-[0.68rem] font-black uppercase tracking-[0.14em] text-emerald-700">
+                            Team 1
+                          </p>
                           {match.teamOne.map((playerId) => (
-                            <p key={playerId} className="text-sm font-bold">
+                            <p
+                              key={playerId}
+                              className="text-base font-black leading-7 text-[var(--ink)]"
+                            >
                               {playerById.get(playerId)?.name ?? "Unknown"}
                             </p>
                           ))}
                         </div>
-                        <span className="text-xs font-black text-slate-300">
+                        <span className="self-center rounded-full bg-slate-100 px-2 py-1 text-xs font-black text-slate-400">
                           VS
                         </span>
-                        <div className="rounded-2xl bg-slate-50 p-4 text-center">
+                        <div className="rounded-2xl border border-sky-100 bg-sky-50/70 p-4 text-center">
+                          <p className="mb-2 text-[0.68rem] font-black uppercase tracking-[0.14em] text-sky-700">
+                            Team 2
+                          </p>
                           {match.teamTwo.map((playerId) => (
-                            <p key={playerId} className="text-sm font-bold">
+                            <p
+                              key={playerId}
+                              className="text-base font-black leading-7 text-[var(--ink)]"
+                            >
                               {playerById.get(playerId)?.name ?? "Unknown"}
                             </p>
                           ))}
                         </div>
                       </div>
-                      <MatchEditor
-                        matchId={match.id}
-                        eventId={event.id}
-                        playerIds={[...match.teamOne, ...match.teamTwo]}
-                        players={event.players}
-                        disabled={
-                          !canEditDrawLineup({
-                            canManage,
-                            eventStatus: event.status,
-                            matchStatus: status,
-                          })
-                        }
-                      />
+                      <div className="px-5 pb-5">
+                        <MatchEditor
+                          matchId={match.id}
+                          eventId={event.id}
+                          playerIds={[...match.teamOne, ...match.teamTwo]}
+                          players={playerOptions}
+                          disabled={
+                            !canEditDrawLineup({
+                              canManage,
+                              eventStatus: event.status,
+                              matchStatus: status,
+                            })
+                          }
+                        />
+                      </div>
                     </Card>
                   );
                 })}
               </div>
               {round.restingPlayerIds.length ? (
-                <p className="mt-3 text-sm text-slate-500">
-                  Resting:{" "}
-                  {round.restingPlayerIds
-                    .map((playerId) => playerById.get(playerId)?.name)
-                    .join(", ")}
-                </p>
+                <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+                  <p className="text-xs font-black uppercase tracking-[0.14em] text-amber-800">
+                    Waiting this round
+                  </p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {round.restingPlayerIds.map((playerId) => {
+                      const player = playerById.get(playerId);
+                      return (
+                        <span
+                          key={playerId}
+                          className="inline-flex items-center gap-2 rounded-full bg-white px-3 py-1.5 text-sm font-bold text-amber-950 shadow-sm"
+                        >
+                          <span className="grid size-6 place-items-center rounded-full bg-amber-100 text-[0.65rem] font-black">
+                            {player ? initials(player.name) : "?"}
+                          </span>
+                          {player?.name ?? "Unknown"}
+                        </span>
+                      );
+                    })}
+                  </div>
+                </div>
               ) : null}
             </section>
           ))}
+          {drawTransparencyCard}
         </div>
       ) : null}
 
@@ -521,77 +568,93 @@ export default async function EventPage({
         </Card>
       ) : null}
 
-      <Card>
-        <div className="flex items-center gap-2">
-          <CalendarClock size={19} className="text-[var(--green)]" />
-          <h2 className="text-xl font-black">Tournament timing</h2>
-        </div>
-        <div className="mt-5 overflow-x-auto">
-          <table className="w-full min-w-[680px] border-collapse text-sm">
-            <thead className="bg-slate-50 text-left text-xs uppercase tracking-[0.12em] text-slate-500">
-              <tr>
-                {["Round", "Courts", "Match time", "Break after"].map(
-                  (heading) => (
-                    <th key={heading} className="px-4 py-3 font-black">
-                      {heading}
-                    </th>
-                  ),
-                )}
-              </tr>
-            </thead>
-            <tbody>
-              {roundTiming.map((round) => (
-                <tr
-                  key={round.roundNumber}
-                  className="border-b border-slate-100 last:border-0"
-                >
-                  <td className="px-4 py-3 font-bold text-[var(--ink)]">
-                    Round {round.roundNumber}
-                  </td>
-                  <td className="px-4 py-3">{formatCourtList(round.courts)}</td>
-                  <td className="px-4 py-3">
-                    {round.durations.map(formatDuration).join(", ")}
-                  </td>
-                  <td className="px-4 py-3">
-                    {round.breakMinutes ? `${round.breakMinutes} min` : "Done"}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Card>
+      {view === "live" || view === "standings" ? drawTransparencyCard : null}
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <Card className="flex items-center gap-3 py-4">
-          <Clock3 className="text-[var(--green)]" size={20} />
-          <span>
-            <strong className="block text-sm">{event.roundMinutes} min</strong>
-            <span className="text-xs text-slate-500">match duration</span>
-          </span>
-        </Card>
-        <Card className="flex items-center gap-3 py-4">
-          <CalendarClock className="text-[var(--green)]" size={20} />
-          <span>
-            <strong className="block text-sm">{event.breakMinutes} min</strong>
-            <span className="text-xs text-slate-500">between rounds</span>
-          </span>
-        </Card>
-        <Card className="flex items-center gap-3 py-4">
-          <Users className="text-[var(--green)]" size={20} />
-          <span>
-            <strong className="block text-sm">{courtNumbers.length}</strong>
-            <span className="text-xs text-slate-500">courts used</span>
-          </span>
-        </Card>
-        <Card className="flex items-center gap-3 py-4">
-          <ShieldCheck className="text-[var(--green)]" size={20} />
-          <span>
-            <strong className="block text-sm">Protected</strong>
-            <span className="text-xs text-slate-500">completed matches</span>
-          </span>
-        </Card>
-      </div>
+      {view === "overview" ? (
+        <>
+          <Card>
+            <div className="flex items-center gap-2">
+              <CalendarClock size={19} className="text-[var(--green)]" />
+              <h2 className="text-xl font-black">Tournament timing</h2>
+            </div>
+            <div className="mt-5 overflow-x-auto">
+              <table className="w-full min-w-[680px] border-collapse text-sm">
+                <thead className="bg-slate-50 text-left text-xs uppercase tracking-[0.12em] text-slate-500">
+                  <tr>
+                    {["Round", "Courts", "Match time", "Break after"].map(
+                      (heading) => (
+                        <th key={heading} className="px-4 py-3 font-black">
+                          {heading}
+                        </th>
+                      ),
+                    )}
+                  </tr>
+                </thead>
+                <tbody>
+                  {roundTiming.map((round) => (
+                    <tr
+                      key={round.roundNumber}
+                      className="border-b border-slate-100 last:border-0"
+                    >
+                      <td className="px-4 py-3 font-bold text-[var(--ink)]">
+                        Round {round.roundNumber}
+                      </td>
+                      <td className="px-4 py-3">
+                        {formatCourtList(round.courts)}
+                      </td>
+                      <td className="px-4 py-3">
+                        {round.durations.map(formatDuration).join(", ")}
+                      </td>
+                      <td className="px-4 py-3">
+                        {round.breakMinutes
+                          ? `${round.breakMinutes} min`
+                          : "Done"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <Card className="flex items-center gap-3 py-4">
+              <Clock3 className="text-[var(--green)]" size={20} />
+              <span>
+                <strong className="block text-sm">
+                  {event.roundMinutes} min
+                </strong>
+                <span className="text-xs text-slate-500">match duration</span>
+              </span>
+            </Card>
+            <Card className="flex items-center gap-3 py-4">
+              <CalendarClock className="text-[var(--green)]" size={20} />
+              <span>
+                <strong className="block text-sm">
+                  {event.breakMinutes} min
+                </strong>
+                <span className="text-xs text-slate-500">between rounds</span>
+              </span>
+            </Card>
+            <Card className="flex items-center gap-3 py-4">
+              <Users className="text-[var(--green)]" size={20} />
+              <span>
+                <strong className="block text-sm">{courtNumbers.length}</strong>
+                <span className="text-xs text-slate-500">courts used</span>
+              </span>
+            </Card>
+            <Card className="flex items-center gap-3 py-4">
+              <ShieldCheck className="text-[var(--green)]" size={20} />
+              <span>
+                <strong className="block text-sm">Protected</strong>
+                <span className="text-xs text-slate-500">
+                  completed matches
+                </span>
+              </span>
+            </Card>
+          </div>
+        </>
+      ) : null}
     </div>
   );
 }

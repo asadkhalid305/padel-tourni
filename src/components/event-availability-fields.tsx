@@ -2,22 +2,31 @@
 
 import { useMemo, useState } from "react";
 
+import { calculateMinimumEventPlayerCount } from "@/domain/event-requirements";
 import { calculateScheduleCapacity } from "@/domain/schedule-calculations";
 
 type CourtTimeMode = "equal" | "different";
 
-export function EventAvailabilityFields() {
-  const [courtCount, setCourtCount] = useState(2);
+export function EventAvailabilityFields({
+  courtCount: controlledCourtCount,
+  onCourtCountChange,
+}: {
+  courtCount?: number;
+  onCourtCountChange?: (courtCount: number) => void;
+}) {
+  const [localCourtCount, setLocalCourtCount] = useState(2);
   const [courtTimeMode, setCourtTimeMode] = useState<CourtTimeMode>("equal");
   const [equalCourtMinutes, setEqualCourtMinutes] = useState(120);
   const [courtMinutes, setCourtMinutes] = useState([120, 120]);
   const [requestedRoundMinutes, setRequestedRoundMinutes] = useState(20);
   const [breakMinutes, setBreakMinutes] = useState(3);
+  const courtCount = controlledCourtCount ?? localCourtCount;
   const readNumber = (value: number) => (Number.isNaN(value) ? 0 : value);
   const effectiveCourtMinutes =
     courtTimeMode === "equal"
       ? Array(courtCount).fill(equalCourtMinutes)
       : courtMinutes.slice(0, courtCount);
+  const minimumPlayerCount = calculateMinimumEventPlayerCount(courtCount);
 
   const capacity = useMemo(() => {
     try {
@@ -33,7 +42,8 @@ export function EventAvailabilityFields() {
 
   function updateCourtCount(value: number) {
     const nextCourtCount = Math.max(1, Math.min(20, readNumber(value)));
-    setCourtCount(nextCourtCount);
+    setLocalCourtCount(nextCourtCount);
+    onCourtCountChange?.(nextCourtCount);
     setCourtMinutes((current) =>
       Array.from(
         { length: nextCourtCount },
@@ -174,6 +184,9 @@ export function EventAvailabilityFields() {
                 ? ` (adjusted from ${requestedRoundMinutes} minutes)`
                 : ""}
               .
+            </p>
+            <p className="text-xs text-emerald-900/80">
+              Minimum roster: {minimumPlayerCount} players.
             </p>
             <p className="text-xs text-emerald-900/80">
               Total court time:{" "}

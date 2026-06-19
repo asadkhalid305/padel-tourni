@@ -8,6 +8,6 @@ export function canEditDrawLineup({
   matchStatus: string;
 }) {
   return (
-    canManage && eventStatus !== "completed" && matchStatus !== "completed"
+    canManage && eventStatus !== "completed" && matchStatus === "scheduled"
   );
 }

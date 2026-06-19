@@ -6,6 +6,7 @@ import { z } from "zod";
 
 import { assertCanRegenerate } from "@/domain/consistency";
 import { canEditDrawLineup } from "@/domain/draw-permissions";
+import { assertValidLineupSelection } from "@/domain/lineup-validation";
 import { calculateScheduleCapacity } from "@/domain/schedule-calculations";
 import type { ScheduleCapacity } from "@/domain/schedule-calculations";
 import { generateSchedule } from "@/domain/scheduler";
@@ -427,15 +428,7 @@ export async function updateMatchLineup(
   const matchId = String(formData.get("matchId"));
   const eventId = String(formData.get("eventId"));
   const playerIds = formData.getAll("playerIds").map(String);
-  if (
-    !matchId ||
-    !eventId ||
-    playerIds.length !== 4 ||
-    new Set(playerIds).size !== 4 ||
-    playerIds.some(
-      (id) => !id.trim() || id.toLowerCase().includes("placeholder"),
-    )
-  ) {
+  if (!matchId || !eventId) {
     return { ok: false, message: "Choose four distinct players." };
   }
   const authorizationError = await assertAdminAction();
@@ -445,7 +438,7 @@ export async function updateMatchLineup(
   if (!client) return unavailable;
   const { data: match, error: readError } = await client
     .from("matches")
-    .select("status")
+    .select("status,round_id")
     .eq("id", matchId)
     .eq("event_id", eventId)
     .single();
@@ -465,16 +458,51 @@ export async function updateMatchLineup(
       matchStatus: match.status,
     })
   ) {
-    return { ok: false, message: "Completed draws are locked." };
+    return { ok: false, message: "Draws are locked once a match starts." };
   }
 
-  const { data: validPlayers, error: playerError } = await client
+  const { data: eventPlayers, error: playerError } = await client
     .from("event_players")
     .select("id")
+    .eq("event_id", eventId);
+  if (playerError) {
+    return { ok: false, message: playerError.message };
+  }
+
+  const { data: roundMatches, error: roundMatchesError } = await client
+    .from("matches")
+    .select(
+      "id,team_one_player_one_id,team_one_player_two_id,team_two_player_one_id,team_two_player_two_id",
+    )
     .eq("event_id", eventId)
-    .in("id", playerIds);
-  if (playerError || validPlayers.length !== 4) {
-    return { ok: false, message: "Every player must belong to this event." };
+    .eq("round_id", match.round_id);
+  if (roundMatchesError) {
+    return { ok: false, message: roundMatchesError.message };
+  }
+
+  try {
+    assertValidLineupSelection({
+      matchId,
+      selectedPlayerIds: playerIds,
+      eventPlayerIds: eventPlayers.map((player) => player.id),
+      roundMatches: roundMatches.map((roundMatch) => ({
+        id: roundMatch.id,
+        playerIds: [
+          roundMatch.team_one_player_one_id,
+          roundMatch.team_one_player_two_id,
+          roundMatch.team_two_player_one_id,
+          roundMatch.team_two_player_two_id,
+        ],
+      })),
+    });
+  } catch (error) {
+    return {
+      ok: false,
+      message:
+        error instanceof Error
+          ? error.message
+          : "Choose four distinct players.",
+    };
   }
 
   const { error } = await client

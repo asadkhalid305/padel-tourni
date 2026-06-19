@@ -3,8 +3,18 @@ import { describe, expect, it } from "vitest";
 import { canEditDrawLineup } from "@/domain/draw-permissions";
 
 describe("draw lineup permissions", () => {
-  it.each(["scheduled", "live", "paused"])(
-    "allows admins to edit %s matches on active events",
+  it("allows admins to edit scheduled matches on active events", () => {
+    expect(
+      canEditDrawLineup({
+        canManage: true,
+        eventStatus: "live",
+        matchStatus: "scheduled",
+      }),
+    ).toBe(true);
+  });
+
+  it.each(["live", "paused", "completed"])(
+    "locks %s matches",
     (matchStatus) => {
       expect(
         canEditDrawLineup({
@@ -12,18 +22,11 @@ describe("draw lineup permissions", () => {
           eventStatus: "live",
           matchStatus,
         }),
-      ).toBe(true);
+      ).toBe(false);
     },
   );
 
-  it("locks completed matches and completed events", () => {
-    expect(
-      canEditDrawLineup({
-        canManage: true,
-        eventStatus: "live",
-        matchStatus: "completed",
-      }),
-    ).toBe(false);
+  it("locks completed events", () => {
     expect(
       canEditDrawLineup({
         canManage: true,
