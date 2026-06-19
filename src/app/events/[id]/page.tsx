@@ -12,16 +12,15 @@ import { notFound } from "next/navigation";
 
 import { AccessLimited } from "@/components/access-limited";
 import { EventAdminActions } from "@/components/event-admin-actions";
-import { MatchEditor } from "@/components/match-editor";
 import { MatchTimer } from "@/components/match-timer";
 import { PageBackLink } from "@/components/page-back-link";
+import { RoundDrawEditor } from "@/components/round-draw-editor";
 import { ScoreForm } from "@/components/score-form";
 import { Badge, Card } from "@/components/ui";
 import { diagnoseSchedule } from "@/domain/diagnostics";
 import { canEditDrawLineup } from "@/domain/draw-permissions";
 import { canDeleteEvent } from "@/domain/event-mutations";
 import { canManageLiveMatches } from "@/domain/event-status";
-import { getEditableLineupPlayerIds } from "@/domain/lineup-validation";
 import type { ScheduledMatch } from "@/domain/types";
 import { canViewPrivateData, getEvent, type EventMatch } from "@/lib/data";
 import { isAdminRole } from "@/lib/roles";
@@ -321,37 +320,47 @@ export default async function EventPage({
 
       {view === "draw" ? (
         <div className="space-y-5">
-          {event.schedule.rounds.map((round) => (
-            <section key={round.roundNumber}>
-              <div className="mb-3 flex items-center gap-3">
-                <h2 className="text-xl font-black text-[var(--ink)]">
-                  Round {round.roundNumber}
-                </h2>
-                <span className="text-sm font-semibold text-slate-500">
-                  {round.matches.length} court
-                  {round.matches.length === 1 ? "" : "s"}
-                </span>
-              </div>
-              <div className="grid gap-4 xl:grid-cols-2">
-                {round.matches.map((match) => {
-                  const enriched = match as ScheduledMatch &
-                    Partial<EventMatch>;
-                  const completed = completedById.get(match.id);
-                  const status =
-                    enriched.status ?? (completed ? "completed" : "scheduled");
-                  const editablePlayerIds = getEditableLineupPlayerIds({
-                    matchId: match.id,
-                    eventPlayerIds: event.players.map((player) => player.id),
-                    roundMatches: round.matches.map((roundMatch) => ({
-                      id: roundMatch.id,
-                      playerIds: [...roundMatch.teamOne, ...roundMatch.teamTwo],
-                    })),
-                  });
-                  const editablePlayerIdSet = new Set(editablePlayerIds);
-                  const playerOptions = event.players.filter((player) =>
-                    editablePlayerIdSet.has(player.id),
-                  );
-                  return (
+          {event.schedule.rounds.map((round) => {
+            const roundMatches = round.matches.map((match) => {
+              const enriched = match as ScheduledMatch & Partial<EventMatch>;
+              const completed = completedById.get(match.id);
+              const status =
+                enriched.status ?? (completed ? "completed" : "scheduled");
+              return { match, status };
+            });
+            const roundEditorMatches = roundMatches.map(
+              ({ match, status }) => ({
+                id: match.id,
+                courtNumber: match.courtNumber,
+                playerIds: [...match.teamOne, ...match.teamTwo] as [
+                  string,
+                  string,
+                  string,
+                  string,
+                ],
+                isEditable: canEditDrawLineup({
+                  canManage,
+                  eventStatus: event.status,
+                  matchStatus: status,
+                }),
+              }),
+            );
+            const hasEditableMatches = roundEditorMatches.some(
+              (match) => match.isEditable,
+            );
+            return (
+              <section key={round.roundNumber}>
+                <div className="mb-3 flex items-center gap-3">
+                  <h2 className="text-xl font-black text-[var(--ink)]">
+                    Round {round.roundNumber}
+                  </h2>
+                  <span className="text-sm font-semibold text-slate-500">
+                    {round.matches.length} court
+                    {round.matches.length === 1 ? "" : "s"}
+                  </span>
+                </div>
+                <div className="grid gap-4 xl:grid-cols-2">
+                  {roundMatches.map(({ match, status }) => (
                     <Card
                       key={match.id}
                       className="border-emerald-950/10 bg-white p-0"
@@ -395,50 +404,43 @@ export default async function EventPage({
                           ))}
                         </div>
                       </div>
-                      <div className="px-5 pb-5">
-                        <MatchEditor
-                          matchId={match.id}
-                          eventId={event.id}
-                          playerIds={[...match.teamOne, ...match.teamTwo]}
-                          players={playerOptions}
-                          disabled={
-                            !canEditDrawLineup({
-                              canManage,
-                              eventStatus: event.status,
-                              matchStatus: status,
-                            })
-                          }
-                        />
-                      </div>
                     </Card>
-                  );
-                })}
-              </div>
-              {round.restingPlayerIds.length ? (
-                <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4">
-                  <p className="text-xs font-black uppercase tracking-[0.14em] text-amber-800">
-                    Waiting this round
-                  </p>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {round.restingPlayerIds.map((playerId) => {
-                      const player = playerById.get(playerId);
-                      return (
-                        <span
-                          key={playerId}
-                          className="inline-flex items-center gap-2 rounded-full bg-white px-3 py-1.5 text-sm font-bold text-amber-950 shadow-sm"
-                        >
-                          <span className="grid size-6 place-items-center rounded-full bg-amber-100 text-[0.65rem] font-black">
-                            {player ? initials(player.name) : "?"}
-                          </span>
-                          {player?.name ?? "Unknown"}
-                        </span>
-                      );
-                    })}
-                  </div>
+                  ))}
                 </div>
-              ) : null}
-            </section>
-          ))}
+                {hasEditableMatches ? (
+                  <RoundDrawEditor
+                    eventId={event.id}
+                    roundNumber={round.roundNumber}
+                    matches={roundEditorMatches}
+                    players={event.players}
+                  />
+                ) : null}
+                {round.restingPlayerIds.length ? (
+                  <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+                    <p className="text-xs font-black uppercase tracking-[0.14em] text-amber-800">
+                      Waiting this round
+                    </p>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {round.restingPlayerIds.map((playerId) => {
+                        const player = playerById.get(playerId);
+                        return (
+                          <span
+                            key={playerId}
+                            className="inline-flex items-center gap-2 rounded-full bg-white px-3 py-1.5 text-sm font-bold text-amber-950 shadow-sm"
+                          >
+                            <span className="grid size-6 place-items-center rounded-full bg-amber-100 text-[0.65rem] font-black">
+                              {player ? initials(player.name) : "?"}
+                            </span>
+                            {player?.name ?? "Unknown"}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : null}
+              </section>
+            );
+          })}
           {drawTransparencyCard}
         </div>
       ) : null}

@@ -12,7 +12,7 @@ import {
   canEditEventDetails,
 } from "@/domain/event-mutations";
 import { effectiveEventStatus } from "@/domain/event-status";
-import { assertValidLineupSelection } from "@/domain/lineup-validation";
+import { assertValidRoundLineup } from "@/domain/lineup-validation";
 import { calculateScheduleCapacity } from "@/domain/schedule-calculations";
 import type { ScheduleCapacity } from "@/domain/schedule-calculations";
 import { generateSchedule } from "@/domain/scheduler";
@@ -63,6 +63,30 @@ type RoundCapacityRow = Pick<
     "court_number"
   >[];
 };
+
+const roundLineupSchema = z
+  .object({
+    eventId: z.string().uuid(),
+    roundNumber: z.coerce.number().int().positive(),
+    matchIds: z.array(z.string().uuid()).min(1),
+    playerIds: z.array(z.string().uuid()).min(4),
+  })
+  .superRefine((draw, context) => {
+    if (new Set(draw.matchIds).size !== draw.matchIds.length) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Each match can only appear once in a round draw.",
+        path: ["matchIds"],
+      });
+    }
+    if (draw.playerIds.length !== draw.matchIds.length * 4) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Choose four players for every court.",
+        path: ["playerIds"],
+      });
+    }
+  });
 
 async function assertAdminAction(): Promise<ActionState | null> {
   const user = await requireAdminUser();
@@ -820,105 +844,160 @@ export async function updateTimer(formData: FormData) {
   revalidatePath(`/events/${eventId}`);
 }
 
-export async function updateMatchLineup(
+export async function updateRoundLineup(
   _previous: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  const matchId = String(formData.get("matchId"));
-  const eventId = String(formData.get("eventId"));
-  const playerIds = formData.getAll("playerIds").map(String);
-  if (!matchId || !eventId) {
-    return { ok: false, message: "Choose four distinct players." };
+  const parsed = roundLineupSchema.safeParse({
+    eventId: formData.get("eventId"),
+    roundNumber: formData.get("roundNumber"),
+    matchIds: formData.getAll("matchIds"),
+    playerIds: formData.getAll("playerIds"),
+  });
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.issues[0].message };
   }
   const authorizationError = await assertAdminAction();
   if (authorizationError) return authorizationError;
 
   const client = createServerClient();
   if (!client) return unavailable;
-  const { data: match, error: readError } = await client
+  const { eventId, roundNumber, matchIds, playerIds } = parsed.data;
+  const { data: submittedMatches, error: readError } = await client
     .from("matches")
-    .select("status,round_id")
-    .eq("id", matchId)
+    .select("id,round_id,court_number,status")
     .eq("event_id", eventId)
-    .single();
+    .in("id", matchIds);
   if (readError) return { ok: false, message: readError.message };
+  if (submittedMatches.length !== matchIds.length) {
+    return { ok: false, message: "Every match must belong to this event." };
+  }
 
-  const { data: event, error: eventError } = await client
-    .from("events")
-    .select("status,starts_at")
-    .eq("id", eventId)
-    .single();
+  const roundIds = new Set(submittedMatches.map((match) => match.round_id));
+  if (roundIds.size !== 1) {
+    return { ok: false, message: "Every match must belong to the same round." };
+  }
+  const roundId = submittedMatches[0].round_id;
+
+  const [eventResult, roundResult, roundMatchesResult, eventPlayersResult] =
+    await Promise.all([
+      client
+        .from("events")
+        .select("status,starts_at")
+        .eq("id", eventId)
+        .single(),
+      client
+        .from("event_rounds")
+        .select("round_number")
+        .eq("id", roundId)
+        .eq("event_id", eventId)
+        .single(),
+      client
+        .from("matches")
+        .select(
+          "id,court_number,status,team_one_player_one_id,team_one_player_two_id,team_two_player_one_id,team_two_player_two_id",
+        )
+        .eq("event_id", eventId)
+        .eq("round_id", roundId),
+      client
+        .from("event_players")
+        .select("id,name_snapshot")
+        .eq("event_id", eventId),
+    ]);
+  const { data: event, error: eventError } = eventResult;
   if (eventError) return { ok: false, message: eventError.message };
+  if (roundResult.error) {
+    return { ok: false, message: roundResult.error.message };
+  }
+  if (roundMatchesResult.error) {
+    return { ok: false, message: roundMatchesResult.error.message };
+  }
+  if (eventPlayersResult.error) {
+    return { ok: false, message: eventPlayersResult.error.message };
+  }
+  if (roundResult.data.round_number !== roundNumber) {
+    return { ok: false, message: "Round number does not match this draw." };
+  }
 
+  const roundMatchIds = new Set(
+    roundMatchesResult.data.map((match) => match.id),
+  );
+  if (matchIds.some((matchId) => !roundMatchIds.has(matchId))) {
+    return { ok: false, message: "Every match must belong to this round." };
+  }
+  const eventStatus = effectiveEventStatus({
+    status: event.status,
+    startsAt: event.starts_at,
+  });
   if (
-    !canEditDrawLineup({
-      canManage: true,
-      eventStatus: effectiveEventStatus({
-        status: event.status,
-        startsAt: event.starts_at,
-      }),
-      matchStatus: match.status,
-    })
+    submittedMatches.some(
+      (match) =>
+        !canEditDrawLineup({
+          canManage: true,
+          eventStatus,
+          matchStatus: match.status,
+        }),
+    )
   ) {
     return { ok: false, message: "Draws are locked once a match starts." };
   }
 
-  const { data: eventPlayers, error: playerError } = await client
-    .from("event_players")
-    .select("id")
-    .eq("event_id", eventId);
-  if (playerError) {
-    return { ok: false, message: playerError.message };
-  }
-
-  const { data: roundMatches, error: roundMatchesError } = await client
-    .from("matches")
-    .select(
-      "id,team_one_player_one_id,team_one_player_two_id,team_two_player_one_id,team_two_player_two_id",
-    )
-    .eq("event_id", eventId)
-    .eq("round_id", match.round_id);
-  if (roundMatchesError) {
-    return { ok: false, message: roundMatchesError.message };
-  }
+  const matchById = new Map(
+    roundMatchesResult.data.map((match) => [match.id, match]),
+  );
+  const submittedPlayerIdsByMatchId = new Map(
+    matchIds.map((matchId, index) => [
+      matchId,
+      playerIds.slice(index * 4, index * 4 + 4),
+    ]),
+  );
+  const selectedMatches = matchIds.map((matchId, index) => {
+    const match = matchById.get(matchId);
+    return {
+      id: matchId,
+      courtNumber: match?.court_number ?? 0,
+      playerIds: playerIds.slice(index * 4, index * 4 + 4),
+    };
+  });
+  const proposedRoundMatches = roundMatchesResult.data.map((match) => ({
+    id: match.id,
+    courtNumber: match.court_number,
+    playerIds: submittedPlayerIdsByMatchId.get(match.id) ?? [
+      match.team_one_player_one_id,
+      match.team_one_player_two_id,
+      match.team_two_player_one_id,
+      match.team_two_player_two_id,
+    ],
+  }));
 
   try {
-    assertValidLineupSelection({
-      matchId,
-      selectedPlayerIds: playerIds,
-      eventPlayerIds: eventPlayers.map((player) => player.id),
-      roundMatches: roundMatches.map((roundMatch) => ({
-        id: roundMatch.id,
-        playerIds: [
-          roundMatch.team_one_player_one_id,
-          roundMatch.team_one_player_two_id,
-          roundMatch.team_two_player_one_id,
-          roundMatch.team_two_player_two_id,
-        ],
+    assertValidRoundLineup({
+      selectedMatches: proposedRoundMatches,
+      eventPlayers: eventPlayersResult.data.map((player) => ({
+        id: player.id,
+        name: player.name_snapshot,
       })),
+      roundNumber,
     });
   } catch (error) {
     return {
       ok: false,
       message:
-        error instanceof Error
-          ? error.message
-          : "Choose four distinct players.",
+        error instanceof Error ? error.message : "Choose a valid round draw.",
     };
   }
 
-  const { error } = await client
-    .from("matches")
-    .update({
-      team_one_player_one_id: playerIds[0],
-      team_one_player_two_id: playerIds[1],
-      team_two_player_one_id: playerIds[2],
-      team_two_player_two_id: playerIds[3],
-    })
-    .eq("id", matchId);
+  const { error } = await client.rpc("update_scheduled_round_draw", {
+    p_event_id: eventId,
+    p_round_id: roundId,
+    p_assignments: selectedMatches.map((match) => ({
+      match_id: match.id,
+      player_ids: match.playerIds,
+    })),
+  });
   if (error) return { ok: false, message: error.message };
   revalidatePath(`/events/${eventId}`);
-  return { ok: true, message: "Draw updated." };
+  return { ok: true, message: `Round ${roundNumber} draw updated.` };
 }
 
 export async function regenerateEvent(formData: FormData) {

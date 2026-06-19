@@ -276,7 +276,16 @@ export type Database = {
       };
     };
     Views: Record<string, never>;
-    Functions: Record<string, never>;
+    Functions: {
+      update_scheduled_round_draw: {
+        Args: {
+          p_event_id: string;
+          p_round_id: string;
+          p_assignments: Json;
+        };
+        Returns: undefined;
+      };
+    };
     Enums: Record<string, never>;
     CompositeTypes: Record<string, never>;
   };
