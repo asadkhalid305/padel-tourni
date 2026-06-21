@@ -9,6 +9,7 @@ import type {
   ScheduledMatch,
 } from "@/domain/types";
 import { demoEvent, demoEvents, demoPlayers } from "@/lib/demo-data";
+import { sortCareerRows, type CareerPlayerStats } from "@/lib/career-ranking";
 import type { AppUserRole } from "@/lib/roles";
 import {
   createServerClient,
@@ -491,15 +492,17 @@ export async function getEventFormInitialValues(
 export async function getHistoricalPlayerStats() {
   const client = createServerClient();
   if (!client) {
-    return demoEvent.standings.map((standing) => ({
-      playerId: standing.playerId,
-      playerName: standing.playerName,
-      events: 2,
-      matches: standing.played * 2,
-      wins: standing.wins * 2,
-      averagePoints: standing.averagePoints,
-      winRate: standing.winRate,
-    }));
+    return sortCareerRows(
+      demoEvent.standings.map((standing) => ({
+        playerId: standing.playerId,
+        playerName: standing.playerName,
+        events: 2,
+        matches: standing.played * 2,
+        wins: standing.wins * 2,
+        averagePoints: standing.averagePoints,
+        winRate: standing.winRate,
+      })),
+    );
   }
 
   const [snapshotsResult, matchesResult] = await Promise.all([
@@ -563,17 +566,12 @@ export async function getHistoricalPlayerStats() {
     }
   }
 
-  return [...stats.values()]
-    .map((row) => ({
-      ...row,
-      events: row.events.size,
-      averagePoints: row.matches ? row.points / row.matches : 0,
-      winRate: row.matches ? row.wins / row.matches : 0,
-    }))
-    .sort(
-      (first, second) =>
-        second.winRate - first.winRate ||
-        second.averagePoints - first.averagePoints ||
-        first.playerName.localeCompare(second.playerName),
-    );
+  const rows: CareerPlayerStats[] = [...stats.values()].map((row) => ({
+    ...row,
+    events: row.events.size,
+    averagePoints: row.matches ? row.points / row.matches : 0,
+    winRate: row.matches ? row.wins / row.matches : 0,
+  }));
+
+  return sortCareerRows(rows);
 }

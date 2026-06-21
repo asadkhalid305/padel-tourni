@@ -12,6 +12,7 @@ import { notFound } from "next/navigation";
 
 import { AccessLimited } from "@/components/access-limited";
 import { EventAdminActions } from "@/components/event-admin-actions";
+import { EventStandingsTable } from "@/components/event-standings-table";
 import { MatchTimer } from "@/components/match-timer";
 import { PageBackLink } from "@/components/page-back-link";
 import { RoundDrawEditor } from "@/components/round-draw-editor";
@@ -573,55 +574,7 @@ export default async function EventPage({
             </div>
             <Scale className="text-[var(--green)]" />
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[760px] border-collapse text-sm">
-              <thead className="bg-[var(--ink)] text-left text-xs uppercase tracking-[0.12em] text-white/60">
-                <tr>
-                  {[
-                    "#",
-                    "Player",
-                    "P",
-                    "W",
-                    "D",
-                    "L",
-                    "PF",
-                    "+/-",
-                    "Avg",
-                    "Win %",
-                  ].map((heading) => (
-                    <th key={heading} className="px-4 py-3 font-bold">
-                      {heading}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {event.standings.map((row) => (
-                  <tr
-                    key={row.playerId}
-                    className="border-b border-slate-100 last:border-0"
-                  >
-                    <td className="px-4 py-4 font-black text-[var(--green)]">
-                      {row.rank}
-                    </td>
-                    <td className="px-4 py-4 font-bold">{row.playerName}</td>
-                    <td className="px-4 py-4">{row.played}</td>
-                    <td className="px-4 py-4">{row.wins}</td>
-                    <td className="px-4 py-4">{row.draws}</td>
-                    <td className="px-4 py-4">{row.losses}</td>
-                    <td className="px-4 py-4">{row.pointsFor}</td>
-                    <td className="px-4 py-4">{row.pointDifference}</td>
-                    <td className="px-4 py-4">
-                      {row.averagePoints.toFixed(1)}
-                    </td>
-                    <td className="px-4 py-4">
-                      {(row.winRate * 100).toFixed(0)}%
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <EventStandingsTable standings={event.standings} />
         </Card>
       ) : null}
 

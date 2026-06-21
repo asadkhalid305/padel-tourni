@@ -1,6 +1,7 @@
 import { Medal, TrendingUp, Trophy } from "lucide-react";
 
 import { AccessLimited } from "@/components/access-limited";
+import { CareerBoard } from "@/components/career-board";
 import { Card, SectionHeading } from "@/components/ui";
 import {
   canViewPrivateData,
@@ -55,48 +56,10 @@ export default async function HistoryPage() {
           <div className="p-5">
             <h2 className="text-xl font-black">Career board</h2>
             <p className="text-sm text-slate-500">
-              Ranked by win rate, then average points.
+              Ranked by average points, then win rate.
             </p>
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[620px] text-sm">
-              <thead className="bg-[var(--ink)] text-left text-xs uppercase tracking-[0.12em] text-white/60">
-                <tr>
-                  {["Player", "Events", "Matches", "Wins", "Avg", "Win %"].map(
-                    (heading) => (
-                      <th key={heading} className="px-4 py-3">
-                        {heading}
-                      </th>
-                    ),
-                  )}
-                </tr>
-              </thead>
-              <tbody>
-                {players.map((player, index) => (
-                  <tr
-                    key={player.playerId}
-                    className="border-b border-slate-100"
-                  >
-                    <td className="px-4 py-4 font-bold">
-                      <span className="mr-3 text-[var(--green)]">
-                        {index + 1}.
-                      </span>
-                      {player.playerName}
-                    </td>
-                    <td className="px-4 py-4">{player.events}</td>
-                    <td className="px-4 py-4">{player.matches}</td>
-                    <td className="px-4 py-4">{player.wins}</td>
-                    <td className="px-4 py-4">
-                      {player.averagePoints.toFixed(1)}
-                    </td>
-                    <td className="px-4 py-4">
-                      {(player.winRate * 100).toFixed(0)}%
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <CareerBoard players={players} />
         </Card>
 
         <Card>
