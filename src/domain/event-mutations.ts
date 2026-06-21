@@ -18,3 +18,19 @@ export function canEditEventDetails(options: {
 export function canChangeEventSchedule(options: { matchStatuses: string[] }) {
   return options.matchStatuses.every((status) => status === "scheduled");
 }
+
+export function canCompleteEvent(options: {
+  eventStatus: string;
+  matchStatuses: string[];
+}) {
+  return (
+    options.eventStatus !== "completed" &&
+    options.matchStatuses.length > 0 &&
+    options.matchStatuses.every(
+      (status) =>
+        status === "scheduled" ||
+        status === "completed" ||
+        status === "cancelled",
+    )
+  );
+}

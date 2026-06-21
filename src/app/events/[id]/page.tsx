@@ -19,7 +19,7 @@ import { ScoreForm } from "@/components/score-form";
 import { Badge, Card } from "@/components/ui";
 import { diagnoseSchedule } from "@/domain/diagnostics";
 import { canEditDrawLineup } from "@/domain/draw-permissions";
-import { canDeleteEvent } from "@/domain/event-mutations";
+import { canCompleteEvent, canDeleteEvent } from "@/domain/event-mutations";
 import { canManageLiveMatches } from "@/domain/event-status";
 import type { ScheduledMatch } from "@/domain/types";
 import { canViewPrivateData, getEvent, type EventMatch } from "@/lib/data";
@@ -31,6 +31,7 @@ function statusTone(status: string) {
   if (status === "completed") return "success" as const;
   if (status === "live") return "live" as const;
   if (status === "paused") return "warning" as const;
+  if (status === "cancelled") return "danger" as const;
   return "info" as const;
 }
 
@@ -82,14 +83,21 @@ export default async function EventPage({
     event.completedMatches.map((match) => [match.id, match]),
   );
   const allMatches = event.schedule.rounds.flatMap((round) => round.matches);
+  const matchStatuses = allMatches.map((match) => {
+    const enriched = match as ScheduledMatch & Partial<EventMatch>;
+    return enriched.status ?? "scheduled";
+  });
   const canDeleteCurrentEvent =
     canManage &&
     canDeleteEvent({
       eventStatus: event.status,
-      matchStatuses: allMatches.map((match) => {
-        const enriched = match as ScheduledMatch & Partial<EventMatch>;
-        return enriched.status ?? "scheduled";
-      }),
+      matchStatuses,
+    });
+  const canCompleteCurrentEvent =
+    canManage &&
+    canCompleteEvent({
+      eventStatus: event.status,
+      matchStatuses,
     });
   const courtNumbers = [
     ...new Set(allMatches.map((match) => match.courtNumber)),
@@ -206,6 +214,7 @@ export default async function EventPage({
               <div className="mt-5">
                 <EventAdminActions
                   eventId={event.id}
+                  canComplete={canCompleteCurrentEvent}
                   canDelete={canDeleteCurrentEvent}
                   showDelete={event.status === "scheduled"}
                 />
@@ -504,6 +513,15 @@ export default async function EventPage({
                       </p>
                       <p className="text-xs font-bold text-emerald-700">
                         Final score locked
+                      </p>
+                    </div>
+                  ) : status === "cancelled" ? (
+                    <div className="mt-5 rounded-2xl bg-rose-50 p-4 text-center">
+                      <p className="text-sm font-black text-rose-800">
+                        Match cancelled
+                      </p>
+                      <p className="mt-1 text-xs font-bold text-rose-700">
+                        Not played and excluded from standings
                       </p>
                     </div>
                   ) : (

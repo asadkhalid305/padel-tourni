@@ -1,26 +1,35 @@
 "use client";
 
-import { Copy, Pencil, Trash2 } from "lucide-react";
+import { CheckCircle2, Copy, Pencil, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useActionState, useState } from "react";
 
-import { deleteEvent, type ActionState } from "@/app/actions";
+import { completeEvent, deleteEvent, type ActionState } from "@/app/actions";
 import { PendingSubmitButton } from "@/components/pending-submit-button";
 import { Button } from "@/components/ui";
 
 const initialState: ActionState = { ok: false, message: "" };
+type Confirmation = "complete" | "delete" | null;
 
 export function EventAdminActions({
   eventId,
+  canComplete,
   canDelete,
   showDelete,
 }: {
   eventId: string;
+  canComplete: boolean;
   canDelete: boolean;
   showDelete: boolean;
 }) {
-  const [state, action] = useActionState(deleteEvent, initialState);
-  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [deleteState, deleteAction] = useActionState(deleteEvent, initialState);
+  const [completeState, completeAction] = useActionState(
+    completeEvent,
+    initialState,
+  );
+  const [confirmation, setConfirmation] = useState<Confirmation>(null);
+  const message = completeState.message || deleteState.message;
+  const ok = completeState.message ? completeState.ok : deleteState.ok;
 
   return (
     <div className="flex flex-wrap items-center gap-2">
@@ -38,32 +47,25 @@ export function EventAdminActions({
         <Copy size={17} />
         Duplicate
       </Link>
+      {canComplete ? (
+        <Button
+          type="button"
+          variant="secondary"
+          onClick={() => setConfirmation("complete")}
+        >
+          <CheckCircle2 size={17} />
+          Complete tournament
+        </Button>
+      ) : null}
       {showDelete && canDelete ? (
-        confirmingDelete ? (
-          <form action={action} className="flex flex-wrap items-center gap-2">
-            <input type="hidden" name="eventId" value={eventId} />
-            <PendingSubmitButton variant="danger" pendingLabel="Deleting...">
-              <Trash2 size={17} />
-              Delete
-            </PendingSubmitButton>
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={() => setConfirmingDelete(false)}
-            >
-              Cancel
-            </Button>
-          </form>
-        ) : (
-          <Button
-            type="button"
-            variant="danger"
-            onClick={() => setConfirmingDelete(true)}
-          >
-            <Trash2 size={17} />
-            Delete
-          </Button>
-        )
+        <Button
+          type="button"
+          variant="danger"
+          onClick={() => setConfirmation("delete")}
+        >
+          <Trash2 size={17} />
+          Delete
+        </Button>
       ) : showDelete ? (
         <Button
           type="button"
@@ -75,21 +77,103 @@ export function EventAdminActions({
           Delete
         </Button>
       ) : null}
-      {showDelete && !canDelete ? (
-        <p className="basis-full text-sm font-bold text-amber-100">
-          Delete is locked because this event already has match activity.
-        </p>
-      ) : null}
-      {state.message ? (
+      {message ? (
         <p
-          className={`basis-full text-sm font-bold ${
-            state.ok ? "text-emerald-100" : "text-rose-100"
+          className={`basis-full max-w-3xl text-sm font-bold ${
+            ok ? "text-emerald-100" : "text-rose-100"
           }`}
           role="status"
         >
-          {state.message}
+          {message}
         </p>
       ) : null}
+      {confirmation === "complete" && !completeState.ok ? (
+        <ConfirmationModal
+          title="Complete tournament?"
+          description="Remaining scheduled matches will be marked cancelled. Completed scores stay locked and standings will use only played matches."
+          action={completeAction}
+          eventId={eventId}
+          confirmLabel="Complete tournament"
+          pendingLabel="Completing..."
+          variant="secondary"
+          message={completeState.message}
+          ok={completeState.ok}
+          onClose={() => setConfirmation(null)}
+        />
+      ) : null}
+      {confirmation === "delete" && !deleteState.ok ? (
+        <ConfirmationModal
+          title="Delete event?"
+          description="This permanently removes the event, draw, and scheduled matches."
+          action={deleteAction}
+          eventId={eventId}
+          confirmLabel="Delete event"
+          pendingLabel="Deleting..."
+          variant="danger"
+          message={deleteState.message}
+          ok={deleteState.ok}
+          onClose={() => setConfirmation(null)}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function ConfirmationModal({
+  title,
+  description,
+  action,
+  eventId,
+  confirmLabel,
+  pendingLabel,
+  variant,
+  message,
+  ok,
+  onClose,
+}: {
+  title: string;
+  description: string;
+  action: (payload: FormData) => void;
+  eventId: string;
+  confirmLabel: string;
+  pendingLabel: string;
+  variant: "secondary" | "danger";
+  message: string;
+  ok: boolean;
+  onClose: () => void;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-50 grid place-items-center bg-slate-950/55 p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="event-confirmation-title"
+    >
+      <div className="w-full max-w-md rounded-2xl bg-white p-5 text-[var(--ink)] shadow-2xl">
+        <h2 id="event-confirmation-title" className="text-xl font-black">
+          {title}
+        </h2>
+        <p className="mt-2 text-sm leading-6 text-slate-600">{description}</p>
+        <form action={action} className="mt-5 flex flex-wrap justify-end gap-2">
+          <input type="hidden" name="eventId" value={eventId} />
+          <Button type="button" variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <PendingSubmitButton variant={variant} pendingLabel={pendingLabel}>
+            {confirmLabel}
+          </PendingSubmitButton>
+          {message ? (
+            <p
+              className={`basis-full text-right text-sm font-bold ${
+                ok ? "text-emerald-700" : "text-rose-600"
+              }`}
+              role="status"
+            >
+              {message}
+            </p>
+          ) : null}
+        </form>
+      </div>
     </div>
   );
 }

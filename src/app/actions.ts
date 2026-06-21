@@ -8,6 +8,7 @@ import { assertCanRegenerate } from "@/domain/consistency";
 import { canEditDrawLineup } from "@/domain/draw-permissions";
 import {
   canChangeEventSchedule,
+  canCompleteEvent,
   canDeleteEvent as canDeleteEventRecord,
   canEditEventDetails,
 } from "@/domain/event-mutations";
@@ -719,6 +720,77 @@ export async function deleteEvent(
   revalidatePath("/");
   revalidatePath("/events");
   redirect("/events");
+}
+
+export async function completeEvent(
+  _previous: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const parsed = eventIdSchema.safeParse(formData.get("eventId"));
+  if (!parsed.success) {
+    return { ok: false, message: "Choose a valid event to complete." };
+  }
+  const authorizationError = await assertAdminAction();
+  if (authorizationError) return authorizationError;
+
+  const client = createServerClient();
+  if (!client) return unavailable;
+
+  const [{ data: event, error: eventError }, matchesResult] = await Promise.all(
+    [
+      client
+        .from("events")
+        .select("status,starts_at")
+        .eq("id", parsed.data)
+        .single(),
+      client.from("matches").select("status").eq("event_id", parsed.data),
+    ],
+  );
+  if (eventError) return { ok: false, message: eventError.message };
+  if (matchesResult.error) {
+    return { ok: false, message: matchesResult.error.message };
+  }
+
+  if (
+    !canCompleteEvent({
+      eventStatus: effectiveEventStatus({
+        status: event.status,
+        startsAt: event.starts_at,
+      }),
+      matchStatuses: matchesResult.data.map((match) => match.status),
+    })
+  ) {
+    return {
+      ok: false,
+      message:
+        "Finish live or paused matches before completing the tournament.",
+    };
+  }
+
+  const scheduledResult = await client
+    .from("matches")
+    .update({ status: "cancelled" })
+    .eq("event_id", parsed.data)
+    .eq("status", "scheduled");
+  if (scheduledResult.error) {
+    return { ok: false, message: scheduledResult.error.message };
+  }
+
+  const eventResult = await client
+    .from("events")
+    .update({ status: "completed" })
+    .eq("id", parsed.data);
+  if (eventResult.error) {
+    return { ok: false, message: eventResult.error.message };
+  }
+
+  revalidatePath("/");
+  revalidatePath("/events");
+  revalidatePath(`/events/${parsed.data}`);
+  return {
+    ok: true,
+    message: "Tournament completed. Unplayed matches were marked cancelled.",
+  };
 }
 
 export async function saveScore(

@@ -63,7 +63,7 @@ export function Badge({
   tone = "neutral",
 }: {
   children: ReactNode;
-  tone?: "neutral" | "success" | "warning" | "live" | "info";
+  tone?: "neutral" | "success" | "warning" | "live" | "info" | "danger";
 }) {
   const tones = {
     neutral: "bg-slate-100 text-slate-600",
@@ -71,6 +71,7 @@ export function Badge({
     warning: "bg-amber-100 text-amber-800",
     live: "bg-rose-100 text-rose-700",
     info: "bg-sky-100 text-sky-700",
+    danger: "bg-rose-100 text-rose-800",
   };
   return (
     <span

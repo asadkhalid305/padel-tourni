@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   canChangeEventSchedule,
+  canCompleteEvent,
   canDeleteEvent,
   canEditEventDetails,
 } from "@/domain/event-mutations";
@@ -45,5 +46,26 @@ describe("event mutation policy", () => {
         matchStatuses: ["scheduled", "scheduled"],
       }),
     ).toBe(true);
+  });
+
+  it("allows admins to finish an event when no match is in progress", () => {
+    expect(
+      canCompleteEvent({
+        eventStatus: "live",
+        matchStatuses: ["completed", "scheduled", "cancelled"],
+      }),
+    ).toBe(true);
+    expect(
+      canCompleteEvent({
+        eventStatus: "live",
+        matchStatuses: ["completed", "live"],
+      }),
+    ).toBe(false);
+    expect(
+      canCompleteEvent({
+        eventStatus: "completed",
+        matchStatuses: ["completed", "scheduled"],
+      }),
+    ).toBe(false);
   });
 });
