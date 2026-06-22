@@ -6,6 +6,7 @@ import {
   pauseTimer,
   resumeTimer,
   timerDisplay,
+  timerSoundCues,
   type TimerState,
 } from "@/domain/timer";
 
@@ -44,5 +45,29 @@ describe("timer calculations", () => {
   it("keeps final elapsed time stable", () => {
     const completed = completeTimer(running, "2026-06-15T10:08:00.000Z");
     expect(elapsedSeconds(completed, "2026-06-15T11:00:00.000Z")).toBe(480);
+  });
+
+  it("reports timer sound cues as a running timer crosses useful thresholds", () => {
+    expect(
+      timerSoundCues({
+        previousElapsedSeconds: 299,
+        elapsedSeconds: 300,
+        durationSeconds: 600,
+      }),
+    ).toEqual([{ type: "remaining", seconds: 300 }]);
+    expect(
+      timerSoundCues({
+        previousElapsedSeconds: 599,
+        elapsedSeconds: 600,
+        durationSeconds: 600,
+      }),
+    ).toEqual([{ type: "expired" }]);
+    expect(
+      timerSoundCues({
+        previousElapsedSeconds: 899,
+        elapsedSeconds: 900,
+        durationSeconds: 600,
+      }),
+    ).toEqual([{ type: "overtime", seconds: 300 }]);
   });
 });

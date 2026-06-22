@@ -17,6 +17,10 @@ import { MatchTimer } from "@/components/match-timer";
 import { PageBackLink } from "@/components/page-back-link";
 import { RoundDrawEditor } from "@/components/round-draw-editor";
 import { ScoreForm } from "@/components/score-form";
+import {
+  TimerSoundProvider,
+  TimerSoundToggle,
+} from "@/components/timer-sound-toggle";
 import { Badge, Card } from "@/components/ui";
 import { diagnoseSchedule } from "@/domain/diagnostics";
 import { canEditDrawLineup } from "@/domain/draw-permissions";
@@ -456,109 +460,113 @@ export default async function EventPage({
       ) : null}
 
       {view === "live" ? (
-        <div className="space-y-4">
-          {canManage && !liveControlsEnabled ? (
-            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-bold text-amber-900">
-              Match timers and scores unlock when the event start time arrives.
-              Edit the event start time first if play is beginning now.
-            </div>
-          ) : null}
-          <div className="grid gap-4 xl:grid-cols-2">
-            {allMatches.map((match) => {
-              const enriched = match as ScheduledMatch & Partial<EventMatch>;
-              const completed = completedById.get(match.id);
-              const status =
-                enriched.status ?? (completed ? "completed" : "scheduled");
-              const teamOneScore =
-                enriched.teamOneScore ?? completed?.teamOneScore ?? 0;
-              const teamTwoScore =
-                enriched.teamTwoScore ?? completed?.teamTwoScore ?? 0;
-              return (
-                <Card
-                  key={match.id}
-                  className={status === "live" ? "ring-2 ring-rose-300" : ""}
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-black uppercase tracking-[0.16em] text-[var(--green)]">
-                      Round {match.roundNumber} · Court {match.courtNumber}
-                    </span>
-                    <Badge tone={statusTone(status)}>{status}</Badge>
-                  </div>
-                  <div className="mt-4 grid grid-cols-[1fr_auto_1fr] items-center gap-3">
-                    <div className="text-center">
-                      {match.teamOne.map((playerId) => (
-                        <p key={playerId} className="text-sm font-bold">
-                          {playerById.get(playerId)?.name}
-                        </p>
-                      ))}
+        <TimerSoundProvider>
+          <div className="space-y-4">
+            <TimerSoundToggle />
+            {canManage && !liveControlsEnabled ? (
+              <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-bold text-amber-900">
+                Match timers and scores unlock when the event start time
+                arrives. Edit the event start time first if play is beginning
+                now.
+              </div>
+            ) : null}
+            <div className="grid gap-4 xl:grid-cols-2">
+              {allMatches.map((match) => {
+                const enriched = match as ScheduledMatch & Partial<EventMatch>;
+                const completed = completedById.get(match.id);
+                const status =
+                  enriched.status ?? (completed ? "completed" : "scheduled");
+                const teamOneScore =
+                  enriched.teamOneScore ?? completed?.teamOneScore ?? 0;
+                const teamTwoScore =
+                  enriched.teamTwoScore ?? completed?.teamTwoScore ?? 0;
+                return (
+                  <Card
+                    key={match.id}
+                    className={status === "live" ? "ring-2 ring-rose-300" : ""}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-black uppercase tracking-[0.16em] text-[var(--green)]">
+                        Round {match.roundNumber} · Court {match.courtNumber}
+                      </span>
+                      <Badge tone={statusTone(status)}>{status}</Badge>
                     </div>
-                    <span className="text-sm font-black text-slate-300">
-                      VS
-                    </span>
-                    <div className="text-center">
-                      {match.teamTwo.map((playerId) => (
-                        <p key={playerId} className="text-sm font-bold">
-                          {playerById.get(playerId)?.name}
-                        </p>
-                      ))}
-                    </div>
-                  </div>
-                  {status === "completed" ? (
-                    <div className="mt-5 rounded-2xl bg-emerald-50 p-4 text-center">
-                      <CircleCheckBig
-                        className="mx-auto text-emerald-600"
-                        size={22}
-                      />
-                      <p className="mt-2 text-3xl font-black text-[var(--ink)]">
-                        {teamOneScore} : {teamTwoScore}
-                      </p>
-                      <p className="text-xs font-bold text-emerald-700">
-                        Final score locked
-                      </p>
-                    </div>
-                  ) : status === "cancelled" ? (
-                    <div className="mt-5 rounded-2xl bg-rose-50 p-4 text-center">
-                      <p className="text-sm font-black text-rose-800">
-                        Match cancelled
-                      </p>
-                      <p className="mt-1 text-xs font-bold text-rose-700">
-                        Not played and excluded from standings
-                      </p>
-                    </div>
-                  ) : (
-                    <>
-                      <div className="mt-5">
-                        <MatchTimer
-                          matchId={match.id}
-                          eventId={event.id}
-                          durationSeconds={
-                            enriched.timerDurationSeconds ??
-                            event.roundMinutes * 60
-                          }
-                          startedAt={enriched.timerStartedAt ?? null}
-                          pausedAt={enriched.timerPausedAt ?? null}
-                          accumulatedPauseSeconds={
-                            enriched.timerAccumulatedPauseSeconds ?? 0
-                          }
-                          initialNow={initialTimerNow}
-                          canManage={canManage}
-                          disabled={!liveControlsEnabled}
-                        />
+                    <div className="mt-4 grid grid-cols-[1fr_auto_1fr] items-center gap-3">
+                      <div className="text-center">
+                        {match.teamOne.map((playerId) => (
+                          <p key={playerId} className="text-sm font-bold">
+                            {playerById.get(playerId)?.name}
+                          </p>
+                        ))}
                       </div>
-                      {canManage ? (
-                        <ScoreForm
-                          matchId={match.id}
-                          eventId={event.id}
-                          disabled={!liveControlsEnabled}
+                      <span className="text-sm font-black text-slate-300">
+                        VS
+                      </span>
+                      <div className="text-center">
+                        {match.teamTwo.map((playerId) => (
+                          <p key={playerId} className="text-sm font-bold">
+                            {playerById.get(playerId)?.name}
+                          </p>
+                        ))}
+                      </div>
+                    </div>
+                    {status === "completed" ? (
+                      <div className="mt-5 rounded-2xl bg-emerald-50 p-4 text-center">
+                        <CircleCheckBig
+                          className="mx-auto text-emerald-600"
+                          size={22}
                         />
-                      ) : null}
-                    </>
-                  )}
-                </Card>
-              );
-            })}
+                        <p className="mt-2 text-3xl font-black text-[var(--ink)]">
+                          {teamOneScore} : {teamTwoScore}
+                        </p>
+                        <p className="text-xs font-bold text-emerald-700">
+                          Final score locked
+                        </p>
+                      </div>
+                    ) : status === "cancelled" ? (
+                      <div className="mt-5 rounded-2xl bg-rose-50 p-4 text-center">
+                        <p className="text-sm font-black text-rose-800">
+                          Match cancelled
+                        </p>
+                        <p className="mt-1 text-xs font-bold text-rose-700">
+                          Not played and excluded from standings
+                        </p>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="mt-5">
+                          <MatchTimer
+                            matchId={match.id}
+                            eventId={event.id}
+                            durationSeconds={
+                              enriched.timerDurationSeconds ??
+                              event.roundMinutes * 60
+                            }
+                            startedAt={enriched.timerStartedAt ?? null}
+                            pausedAt={enriched.timerPausedAt ?? null}
+                            accumulatedPauseSeconds={
+                              enriched.timerAccumulatedPauseSeconds ?? 0
+                            }
+                            initialNow={initialTimerNow}
+                            canManage={canManage}
+                            disabled={!liveControlsEnabled}
+                          />
+                        </div>
+                        {canManage ? (
+                          <ScoreForm
+                            matchId={match.id}
+                            eventId={event.id}
+                            disabled={!liveControlsEnabled}
+                          />
+                        ) : null}
+                      </>
+                    )}
+                  </Card>
+                );
+              })}
+            </div>
           </div>
-        </div>
+        </TimerSoundProvider>
       ) : null}
 
       {view === "standings" ? (
