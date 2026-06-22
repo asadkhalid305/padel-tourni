@@ -12,6 +12,7 @@ import {
   formatMinimumEventPlayerMessage,
 } from "@/domain/event-requirements";
 import type { EventFormInitialValues } from "@/lib/data";
+import { toDateTimeLocalValue } from "@/lib/event-time";
 
 type EventFormPlayer = {
   id: string;
@@ -41,6 +42,9 @@ export function EventForm({
   const [courtCount, setCourtCount] = useState(initialValues?.courtCount ?? 2);
   const [selectedPlayerIds, setSelectedPlayerIds] = useState<Set<string>>(
     new Set(initialValues?.playerIds ?? []),
+  );
+  const [startsAtValue, setStartsAtValue] = useState(
+    initialValues?.startsAt ? toDateTimeLocalValue(initialValues.startsAt) : "",
   );
   const [validationError, setValidationError] = useState("");
   const minimumPlayerCount = calculateMinimumEventPlayerCount(courtCount);
@@ -121,21 +125,21 @@ export function EventForm({
                   className="field"
                   name="startsAt"
                   type="datetime-local"
-                  defaultValue={
-                    initialValues?.startsAt
-                      ? toDateTimeLocalValue(initialValues.startsAt)
-                      : undefined
+                  defaultValue={startsAtValue || undefined}
+                  onChange={(event) =>
+                    setStartsAtValue(event.currentTarget.value)
                   }
                   required
                   disabled={scheduleLocked}
                 />
                 {scheduleLocked ? (
-                  <input
-                    type="hidden"
-                    name="startsAt"
-                    value={initialValues?.startsAt ?? ""}
-                  />
+                  <input type="hidden" name="startsAt" value={startsAtValue} />
                 ) : null}
+                <input
+                  type="hidden"
+                  name="startsAtTimezoneOffsetMinutes"
+                  value={timezoneOffsetForLocalValue(startsAtValue)}
+                />
               </label>
               <EventAvailabilityFields
                 courtCount={courtCount}
@@ -252,14 +256,9 @@ export function EventForm({
   );
 }
 
-function toDateTimeLocalValue(value: string) {
+function timezoneOffsetForLocalValue(value: string) {
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-
-  const offsetDate = new Date(
-    date.getTime() - date.getTimezoneOffset() * 60000,
-  );
-  return offsetDate.toISOString().slice(0, 16);
+  return Number.isNaN(date.getTime()) ? 0 : date.getTimezoneOffset();
 }
 
 function EventCreationProgress() {

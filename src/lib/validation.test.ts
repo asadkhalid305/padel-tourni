@@ -10,6 +10,7 @@ const eventInput = {
   name: "Sunday padel",
   venue: "Main club",
   startsAt: "2026-06-20T10:00",
+  startsAtTimezoneOffsetMinutes: "-120",
   courtCount: "2",
   courtMinutes: ["120", "120"],
   requestedRoundMinutes: "20",
@@ -69,5 +70,29 @@ describe("event validation", () => {
     });
 
     expect(parsed.success).toBe(true);
+  });
+
+  it("preserves the selected local event time with the submitted timezone offset", () => {
+    const parsed = eventSchema.safeParse({
+      ...eventInput,
+      startsAt: "2026-06-20T07:00",
+      startsAtTimezoneOffsetMinutes: "-180",
+      playerIds: [
+        "00000000-0000-4000-8000-000000000001",
+        "00000000-0000-4000-8000-000000000002",
+        "00000000-0000-4000-8000-000000000003",
+        "00000000-0000-4000-8000-000000000004",
+        "00000000-0000-4000-8000-000000000005",
+        "00000000-0000-4000-8000-000000000006",
+        "00000000-0000-4000-8000-000000000007",
+        "00000000-0000-4000-8000-000000000008",
+      ],
+    });
+
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) {
+      throw new Error("Expected event validation to pass.");
+    }
+    expect(parsed.data.startsAt.toISOString()).toBe("2026-06-20T04:00:00.000Z");
   });
 });

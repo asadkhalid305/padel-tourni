@@ -241,6 +241,9 @@ function parseEventFormData(formData: FormData) {
     name: formData.get("name"),
     venue: formData.get("venue"),
     startsAt: formData.get("startsAt"),
+    startsAtTimezoneOffsetMinutes: formData.get(
+      "startsAtTimezoneOffsetMinutes",
+    ),
     courtCount: formData.get("courtCount"),
     courtMinutes: formData.getAll("courtMinutes"),
     requestedRoundMinutes: formData.get("requestedRoundMinutes"),

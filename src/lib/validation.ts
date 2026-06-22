@@ -4,6 +4,7 @@ import {
   calculateMinimumEventPlayerCount,
   formatMinimumEventPlayerMessage,
 } from "@/domain/event-requirements";
+import { parseEventStart } from "@/lib/event-time";
 
 const optionalEmailSchema = z.preprocess((value) => {
   if (typeof value !== "string") return value;
@@ -29,7 +30,13 @@ export const eventSchema = z
   .object({
     name: z.string().trim().min(2).max(120),
     venue: z.string().trim().max(120),
-    startsAt: z.coerce.date(),
+    startsAt: z.string().trim(),
+    startsAtTimezoneOffsetMinutes: z.coerce
+      .number()
+      .int()
+      .min(-840)
+      .max(840)
+      .default(0),
     courtCount: z.coerce.number().int().min(1).max(20),
     courtMinutes: z
       .array(z.coerce.number().int().min(5).max(1440))
@@ -39,6 +46,33 @@ export const eventSchema = z
     breakMinutes: z.coerce.number().int().min(0).max(30),
     notes: z.string().trim().max(1000),
     playerIds: z.array(z.string().uuid()),
+  })
+  .superRefine((event, context) => {
+    if (!parseEventStart(event.startsAt, event.startsAtTimezoneOffsetMinutes)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Choose a valid event start time.",
+        path: ["startsAt"],
+      });
+    }
+  })
+  .transform((event) => {
+    const startsAt = parseEventStart(
+      event.startsAt,
+      event.startsAtTimezoneOffsetMinutes,
+    );
+
+    return {
+      name: event.name,
+      venue: event.venue,
+      startsAt: startsAt ?? new Date(Number.NaN),
+      courtCount: event.courtCount,
+      courtMinutes: event.courtMinutes,
+      requestedRoundMinutes: event.requestedRoundMinutes,
+      breakMinutes: event.breakMinutes,
+      notes: event.notes,
+      playerIds: event.playerIds,
+    };
   })
   .superRefine((event, context) => {
     if (event.courtMinutes.length !== event.courtCount) {
