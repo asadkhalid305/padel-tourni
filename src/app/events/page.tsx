@@ -30,6 +30,8 @@ export default async function EventsPage() {
     listPlayers(workspaceId),
   ]);
   const canManage = isWorkspaceAdminRole(user?.activeWorkspaceRole ?? null);
+  const canCreateEvent =
+    players.filter((player) => player.isActive).length >= 4;
   return (
     <div className="space-y-7">
       <SectionHeading
@@ -37,19 +39,27 @@ export default async function EventsPage() {
         title="Events"
         description="Everything from first draw to final table, kept together."
         action={
-          canManage ? (
+          canManage && canCreateEvent ? (
             <Link
               href="/events/new"
               className="inline-flex min-h-11 items-center rounded-xl bg-[var(--ink)] px-4 text-sm font-bold text-white"
             >
               Create event
             </Link>
+          ) : canManage ? (
+            <span
+              aria-disabled="true"
+              className="inline-flex min-h-11 cursor-not-allowed items-center rounded-xl bg-slate-200 px-4 text-sm font-bold text-slate-500"
+              title="Add at least four players before creating an event."
+            >
+              Create event
+            </span>
           ) : null
         }
       />
       {!events.length ? (
         <WorkspaceEmptyState
-          hasPlayers={players.length > 0}
+          canCreateEvent={canCreateEvent}
           canManage={canManage}
         />
       ) : null}

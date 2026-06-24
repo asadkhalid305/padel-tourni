@@ -4,10 +4,10 @@ import Link from "next/link";
 import { Card } from "@/components/ui";
 
 export function WorkspaceEmptyState({
-  hasPlayers,
+  canCreateEvent,
   canManage,
 }: {
-  hasPlayers: boolean;
+  canCreateEvent: boolean;
   canManage: boolean;
 }) {
   return (
@@ -26,21 +26,38 @@ export function WorkspaceEmptyState({
           </p>
         </div>
         {canManage ? (
-          <div className="flex flex-wrap gap-3">
-            <Link
-              href="/players"
-              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[var(--ink)] px-4 text-sm font-bold text-white"
-            >
-              <UsersRound size={17} />
-              Add players
-            </Link>
-            <Link
-              href={hasPlayers ? "/events/new" : "/players"}
-              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[var(--lime)] px-4 text-sm font-bold text-[var(--ink)]"
-            >
-              <CalendarPlus size={17} />
-              Create event
-            </Link>
+          <div className="space-y-2">
+            <div className="flex flex-wrap gap-3">
+              <Link
+                href="/players"
+                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[var(--ink)] px-4 text-sm font-bold text-white"
+              >
+                <UsersRound size={17} />
+                Add players
+              </Link>
+              {canCreateEvent ? (
+                <Link
+                  href="/events/new"
+                  className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[var(--lime)] px-4 text-sm font-bold text-[var(--ink)]"
+                >
+                  <CalendarPlus size={17} />
+                  Create event
+                </Link>
+              ) : (
+                <span
+                  aria-disabled="true"
+                  className="inline-flex min-h-11 cursor-not-allowed items-center justify-center gap-2 rounded-xl bg-slate-200 px-4 text-sm font-bold text-slate-500"
+                >
+                  <CalendarPlus size={17} />
+                  Create event
+                </span>
+              )}
+            </div>
+            {!canCreateEvent ? (
+              <p className="max-w-sm text-xs font-semibold leading-5 text-slate-500">
+                Add at least four players before creating an event.
+              </p>
+            ) : null}
           </div>
         ) : null}
       </div>

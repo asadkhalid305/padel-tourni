@@ -29,6 +29,8 @@ export default async function DashboardPage() {
   ]);
   const liveEvents = events.filter((event) => event.status === "live");
   const canManage = isWorkspaceAdminRole(user?.activeWorkspaceRole ?? null);
+  const canCreateEvent =
+    players.filter((player) => player.isActive).length >= 4;
   const completedMatches = events.reduce(
     (total, event) => total + event.completedMatches,
     0,
@@ -50,7 +52,10 @@ export default async function DashboardPage() {
         description="Build balanced rotations, keep every court moving, and let live results update the table."
       />
       {!players.length && !events.length ? (
-        <WorkspaceEmptyState hasPlayers={false} canManage={canManage} />
+        <WorkspaceEmptyState
+          canCreateEvent={canCreateEvent}
+          canManage={canManage}
+        />
       ) : null}
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
