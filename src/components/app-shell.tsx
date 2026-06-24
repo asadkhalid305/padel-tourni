@@ -35,12 +35,13 @@ export function AppShell({
   userPromise: Promise<AuthenticatedAppUser | null>;
 }) {
   const pathname = usePathname();
-  const user = use(userPromise);
-  const isAdmin = user ? isWorkspaceAdminRole(user.activeWorkspaceRole) : false;
 
-  if (pathname === "/login") {
+  if (pathname === "/login" || pathname.startsWith("/invites/")) {
     return children;
   }
+
+  const user = use(userPromise);
+  const isAdmin = user ? isWorkspaceAdminRole(user.activeWorkspaceRole) : false;
 
   return (
     <div className="h-dvh overflow-hidden lg:grid lg:grid-cols-[250px_1fr]">

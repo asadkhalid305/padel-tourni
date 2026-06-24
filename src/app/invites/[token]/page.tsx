@@ -9,6 +9,7 @@ import { getAuthenticatedUser } from "@/lib/supabase/server";
 import { formatDate } from "@/lib/utils";
 
 export const metadata = { title: "Workspace invite" };
+export const dynamic = "force-dynamic";
 
 export default async function InvitePage({
   params,
