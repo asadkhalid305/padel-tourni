@@ -49,8 +49,8 @@ export function PlayerForm({
         {player ? "Edit player" : "Add a player"}
       </h2>
       <p className="mt-1 text-sm text-slate-500">
-        Workspace players are event participants. They can stay manual or be
-        linked to a signed-in workspace member later.
+        Players can be used in events immediately. Link a player to a signed-in
+        account when the real person joins.
       </p>
       <form
         key={player?.id ?? "new"}
@@ -72,7 +72,7 @@ export function PlayerForm({
           />
         </label>
         <label className="block">
-          <span className="field-label">Future member email</span>
+          <span className="field-label">Email</span>
           <input
             className="field"
             name="accountEmail"
@@ -81,8 +81,8 @@ export function PlayerForm({
             defaultValue={player?.appUserId ? "" : (player?.accountEmail ?? "")}
           />
           <span className="mt-1 block text-xs font-semibold text-slate-500">
-            Optional note only. Send a workspace invite below when this person
-            should sign in and join.
+            Optional. This is only a note until the player is linked to a
+            signed-in account.
           </span>
         </label>
         <label className="block">

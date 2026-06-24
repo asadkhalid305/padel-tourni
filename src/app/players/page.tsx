@@ -34,21 +34,24 @@ export default async function PlayersPage() {
   return (
     <div className="space-y-7">
       <SectionHeading
-        eyebrow="Workspace players"
+        eyebrow="People"
         title="Players"
-        description="Add manual event participants here, then link them to signed-in workspace members when the real accounts join."
+        description="Manage the people who can play events. A player can be linked to a signed-in account now or later."
       />
       <PlayerManager
         players={players}
+        members={members}
         canManage={canManage}
         canManageRoles={canManageRoles}
         linkableUsers={linkableUsers}
       />
-      <WorkspaceMemberManager
-        members={members}
-        currentAppUserId={user.id}
-        canManageRoles={canManage}
-      />
+      {canManage ? (
+        <WorkspaceMemberManager
+          members={members}
+          currentAppUserId={user.id}
+          canManageRoles={canManage}
+        />
+      ) : null}
       {canManage ? <WorkspaceInviteManager invites={invites} /> : null}
     </div>
   );

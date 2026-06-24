@@ -26,12 +26,10 @@ export function WorkspaceMemberManager({
           <UserRound size={18} />
         </span>
         <div>
-          <h2 className="text-lg font-black text-[var(--ink)]">
-            Workspace members
-          </h2>
+          <h2 className="text-lg font-black text-[var(--ink)]">Access</h2>
           <p className="mt-1 text-sm leading-6 text-slate-500">
-            Joined members can view shared workspace data. Admins can manage
-            players, events, draws, timers, and scores.
+            Control who can manage events, scores, timers, invites, and player
+            links.
           </p>
         </div>
       </div>
@@ -83,7 +81,9 @@ function WorkspaceMemberRow({
           </p>
           <p className="mt-1 truncate text-xs font-semibold text-slate-500">
             {member.email}
-            {member.linkedPlayerName ? ` · ${member.linkedPlayerName}` : ""}
+            {member.linkedPlayerName
+              ? ` · linked to ${member.linkedPlayerName}`
+              : ""}
           </p>
         </div>
         <Badge tone={roleTone}>
