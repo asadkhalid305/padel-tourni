@@ -39,6 +39,71 @@ export type Database = {
         };
         Relationships: [];
       };
+      workspaces: {
+        Row: {
+          id: string;
+          name: string;
+          personal_owner_app_user_id: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          name: string;
+          personal_owner_app_user_id?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<
+          Database["public"]["Tables"]["workspaces"]["Insert"]
+        >;
+        Relationships: [
+          {
+            foreignKeyName: "workspaces_personal_owner_app_user_id_fkey";
+            columns: ["personal_owner_app_user_id"];
+            isOneToOne: true;
+            referencedRelation: "app_users";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      workspace_memberships: {
+        Row: {
+          id: string;
+          workspace_id: string;
+          app_user_id: string;
+          role: "owner" | "admin" | "member";
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          workspace_id: string;
+          app_user_id: string;
+          role?: "owner" | "admin" | "member";
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<
+          Database["public"]["Tables"]["workspace_memberships"]["Insert"]
+        >;
+        Relationships: [
+          {
+            foreignKeyName: "workspace_memberships_app_user_id_fkey";
+            columns: ["app_user_id"];
+            isOneToOne: false;
+            referencedRelation: "app_users";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "workspace_memberships_workspace_id_fkey";
+            columns: ["workspace_id"];
+            isOneToOne: false;
+            referencedRelation: "workspaces";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       players: {
         Row: {
           id: string;

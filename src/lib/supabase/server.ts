@@ -10,6 +10,10 @@ import {
   isSuperAdminRole,
   type AppUserRole,
 } from "@/lib/roles";
+import {
+  ensureDefaultWorkspaceForUser,
+  type WorkspaceRole,
+} from "@/lib/workspaces";
 import type { Database } from "@/types/database";
 
 export function isSupabaseConfigured() {
@@ -71,6 +75,8 @@ export type AuthenticatedAppUser = {
   email: string;
   displayName: string;
   role: AppUserRole;
+  activeWorkspaceId: string | null;
+  activeWorkspaceRole: WorkspaceRole | null;
 };
 
 type AppUserAuthRow = Pick<
@@ -139,12 +145,19 @@ export async function ensureAppUser({
   if (error) throw error;
 
   const promoted = await promoteDefaultSuperAdmin(data);
+  const membership = await ensureDefaultWorkspaceForUser(client, {
+    id: promoted.id,
+    email: promoted.email,
+    displayName: promoted.display_name,
+  });
 
   return {
     id: promoted.id,
     email: promoted.email,
     displayName: promoted.display_name,
     role: promoted.role,
+    activeWorkspaceId: membership.workspaceId,
+    activeWorkspaceRole: membership.role,
   };
 }
 
