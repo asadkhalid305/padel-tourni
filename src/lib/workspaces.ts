@@ -2,19 +2,13 @@ import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import type { WorkspaceRole } from "@/lib/roles";
 import type { Database } from "@/types/database";
-
-export type WorkspaceRole =
-  Database["public"]["Tables"]["workspace_memberships"]["Row"]["role"];
 
 export type WorkspaceMembership = {
   workspaceId: string;
   role: WorkspaceRole;
 };
-
-export function isWorkspaceAdminRole(role: WorkspaceRole) {
-  return role === "owner" || role === "admin";
-}
 
 export async function ensureDefaultWorkspaceForUser(
   client: SupabaseClient<Database>,

@@ -2,8 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const supabaseMocks = vi.hoisted(() => ({
   createServerClient: vi.fn(),
-  requireAdminUser: vi.fn(),
   requireSuperAdminUser: vi.fn(),
+  requireWorkspaceAdminUser: vi.fn(),
 }));
 
 const adminMocks = vi.hoisted(() => ({
@@ -23,8 +23,8 @@ vi.mock("next/navigation", () => ({
 vi.mock("@/lib/supabase/server", () => ({
   createAuthClient: vi.fn(),
   createServerClient: supabaseMocks.createServerClient,
-  requireAdminUser: supabaseMocks.requireAdminUser,
   requireSuperAdminUser: supabaseMocks.requireSuperAdminUser,
+  requireWorkspaceAdminUser: supabaseMocks.requireWorkspaceAdminUser,
 }));
 
 vi.mock("@/lib/auth-admin", async () => {
@@ -43,13 +43,13 @@ import { savePlayer, setPlayerAdminRole } from "@/app/actions";
 describe("RBAC server actions", () => {
   beforeEach(() => {
     supabaseMocks.createServerClient.mockReset();
-    supabaseMocks.requireAdminUser.mockReset();
     supabaseMocks.requireSuperAdminUser.mockReset();
+    supabaseMocks.requireWorkspaceAdminUser.mockReset();
     adminMocks.setAppUserRole.mockReset();
   });
 
   it("blocks member users before player mutations reach Supabase", async () => {
-    supabaseMocks.requireAdminUser.mockResolvedValue(null);
+    supabaseMocks.requireWorkspaceAdminUser.mockResolvedValue(null);
     const formData = new FormData();
     formData.set("name", "Member Managed");
     formData.set("rating", "5");
@@ -70,6 +70,8 @@ describe("RBAC server actions", () => {
       email: "asadkhalid305@gmail.com",
       displayName: "Asad",
       role: "super_admin",
+      activeWorkspaceId: "workspace-1",
+      activeWorkspaceRole: "owner",
     });
     adminMocks.setAppUserRole.mockResolvedValue({
       ok: true,

@@ -28,7 +28,7 @@ import { canCompleteEvent, canDeleteEvent } from "@/domain/event-mutations";
 import { canManageLiveMatches } from "@/domain/event-status";
 import type { ScheduledMatch } from "@/domain/types";
 import { canViewPrivateData, getEvent, type EventMatch } from "@/lib/data";
-import { isAdminRole } from "@/lib/roles";
+import { isWorkspaceAdminRole } from "@/lib/roles";
 import { getAuthenticatedUser } from "@/lib/supabase/server";
 import { formatDate, initials } from "@/lib/utils";
 
@@ -67,10 +67,12 @@ export default async function EventPage({
   if (!(await canViewPrivateData(user))) {
     return <AccessLimited />;
   }
+  const workspaceId = user?.activeWorkspaceId;
+  if (!workspaceId) return <AccessLimited />;
 
-  const event = await getEvent(id);
+  const event = await getEvent(id, workspaceId);
   if (!event) notFound();
-  const canManage = user ? isAdminRole(user.role) : false;
+  const canManage = isWorkspaceAdminRole(user?.activeWorkspaceRole ?? null);
   const initialTimerNow = new Date().toISOString();
   const liveControlsEnabled = canManageLiveMatches({
     canManage,

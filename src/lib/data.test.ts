@@ -9,148 +9,125 @@ vi.mock("@/lib/supabase/server", () => ({
   isSupabaseConfigured: () => true,
 }));
 
-import { canViewPrivateData, listPlayers } from "@/lib/data";
+import { canViewPrivateData, listEvents, listPlayers } from "@/lib/data";
 
 describe("private data access", () => {
   beforeEach(() => {
     supabaseMocks.createServerClient.mockReset();
   });
 
-  it("allows admin roles without requiring a linked player", async () => {
+  it("allows signed-in users with an active workspace", async () => {
     supabaseMocks.createServerClient.mockReturnValue({});
 
     await expect(
-      canViewPrivateData({ id: "admin-user", role: "super_admin" }),
-    ).resolves.toBe(true);
-  });
-
-  it("blocks unlinked members from private data", async () => {
-    supabaseMocks.createServerClient.mockReturnValue({
-      from: vi.fn(() => ({
-        select: vi.fn(() => ({
-          eq: vi.fn(() => ({
-            maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
-          })),
-        })),
-      })),
-    });
-
-    await expect(
-      canViewPrivateData({ id: "member-user", role: "member" }),
-    ).resolves.toBe(false);
-  });
-
-  it("allows linked members to view private data", async () => {
-    supabaseMocks.createServerClient.mockReturnValue({
-      from: vi.fn(() => ({
-        select: vi.fn(() => ({
-          eq: vi.fn(() => ({
-            maybeSingle: vi
-              .fn()
-              .mockResolvedValue({ data: { id: "player-1" }, error: null }),
-          })),
-        })),
-      })),
-    });
-
-    await expect(
-      canViewPrivateData({ id: "member-user", role: "member" }),
-    ).resolves.toBe(true);
-  });
-
-  it("falls back to account email when app_user_id is not migrated yet", async () => {
-    supabaseMocks.createServerClient.mockReturnValue({
-      from: vi.fn(() => ({
-        select: vi.fn(() => ({
-          eq: vi.fn((field: string) => ({
-            maybeSingle: vi.fn().mockResolvedValue(
-              field === "app_user_id"
-                ? {
-                    data: null,
-                    error: { code: "42703", message: "column missing" },
-                  }
-                : { data: { id: "player-1" }, error: null },
-            ),
-          })),
-        })),
-      })),
-    });
-
-    await expect(
       canViewPrivateData({
-        id: "member-user",
-        email: "member@example.com",
+        id: "owner-user",
         role: "member",
+        activeWorkspaceId: "workspace-1",
       }),
     ).resolves.toBe(true);
   });
+
+  it("blocks signed-in users without an active workspace", async () => {
+    supabaseMocks.createServerClient.mockReturnValue({});
+
+    await expect(
+      canViewPrivateData({ id: "member-user", role: "super_admin" }),
+    ).resolves.toBe(false);
+  });
 });
 
-describe("player reads", () => {
+describe("workspace-scoped reads", () => {
   beforeEach(() => {
     supabaseMocks.createServerClient.mockReset();
   });
 
-  it("loads players through account_email when app_user_id is not migrated yet", async () => {
-    supabaseMocks.createServerClient.mockReturnValue({
-      from: vi.fn((table: string) => {
-        if (table === "app_users") {
-          return {
-            select: vi.fn(() => ({
-              or: vi.fn().mockResolvedValue({
-                data: [
-                  {
-                    id: "user-1",
-                    email: "member@example.com",
-                    display_name: "Member",
-                    role: "member",
-                  },
-                ],
-                error: null,
-              }),
-            })),
-          };
-        }
+  it("returns no persisted players when no workspace is active", async () => {
+    const from = vi.fn();
+    supabaseMocks.createServerClient.mockReturnValue({ from });
 
-        return {
-          select: vi.fn((columns: string) => ({
-            order: vi.fn(() => ({
-              order: vi.fn().mockResolvedValue(
-                columns.includes("app_user_id")
-                  ? {
-                      data: null,
-                      error: { code: "42703", message: "column missing" },
-                    }
-                  : {
-                      data: [
-                        {
-                          id: "player-1",
-                          name: "Linked Player",
-                          account_email: "member@example.com",
-                          rating: 6.5,
-                          is_active: true,
-                        },
-                      ],
-                      error: null,
-                    },
-              ),
-            })),
-          })),
-        };
-      }),
+    await expect(listPlayers(null)).resolves.toEqual([]);
+    expect(from).not.toHaveBeenCalled();
+  });
+
+  it("loads players only from the active workspace", async () => {
+    const workspaceFilter = vi.fn(() => ({
+      order: vi.fn(() => ({
+        order: vi.fn().mockResolvedValue({
+          data: [
+            {
+              id: "player-1",
+              app_user_id: null,
+              name: "Workspace Player",
+              account_email: null,
+              rating: 6.5,
+              is_active: true,
+            },
+          ],
+          error: null,
+        }),
+      })),
+    }));
+    supabaseMocks.createServerClient.mockReturnValue({
+      from: vi.fn(() => ({
+        select: vi.fn(() => ({
+          eq: workspaceFilter,
+        })),
+      })),
     });
 
-    await expect(listPlayers()).resolves.toEqual([
+    await expect(listPlayers("workspace-1")).resolves.toEqual([
       {
         id: "player-1",
-        name: "Linked Player",
-        appUserId: "user-1",
-        accountEmail: "member@example.com",
-        accountDisplayName: "Member",
-        accountRole: "member",
+        name: "Workspace Player",
+        appUserId: null,
+        accountEmail: null,
+        accountDisplayName: null,
+        accountRole: null,
         rating: 6.5,
         isActive: true,
       },
     ]);
+    expect(workspaceFilter).toHaveBeenCalledWith("workspace_id", "workspace-1");
+  });
+
+  it("loads events only from the active workspace", async () => {
+    const workspaceFilter = vi.fn(() => ({
+      order: vi.fn().mockResolvedValue({
+        data: [
+          {
+            id: "event-1",
+            name: "Workspace Event",
+            venue: "Court One",
+            starts_at: "2026-06-24T10:00:00.000Z",
+            status: "scheduled",
+            event_players: [{ count: 4 }],
+            matches: [{ status: "completed" }, { status: "scheduled" }],
+          },
+        ],
+        error: null,
+      }),
+    }));
+    supabaseMocks.createServerClient.mockReturnValue({
+      from: vi.fn(() => ({
+        select: vi.fn(() => ({
+          eq: workspaceFilter,
+        })),
+      })),
+    });
+
+    await expect(listEvents("workspace-1")).resolves.toEqual([
+      {
+        id: "event-1",
+        name: "Workspace Event",
+        venue: "Court One",
+        startsAt: "2026-06-24T10:00:00.000Z",
+        status: "scheduled",
+        playerCount: 4,
+        completedMatches: 1,
+        totalMatches: 2,
+      },
+    ]);
+    expect(workspaceFilter).toHaveBeenCalledWith("workspace_id", "workspace-1");
   });
 });

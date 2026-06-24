@@ -20,8 +20,8 @@ import { generateSchedule } from "@/domain/scheduler";
 import {
   createAuthClient,
   createServerClient,
-  requireAdminUser,
   requireSuperAdminUser,
+  requireWorkspaceAdminUser,
 } from "@/lib/supabase/server";
 import { appUserRoleSchema, setAppUserRole } from "@/lib/auth-admin";
 import { eventSchema, playerSchema, scoreSchema } from "@/lib/validation";
@@ -50,6 +50,9 @@ const roleChangeSchema = z.object({
 const eventIdSchema = z.string().uuid();
 type EventInput = z.infer<typeof eventSchema>;
 type ServerClient = NonNullable<ReturnType<typeof createServerClient>>;
+type WorkspaceAdminUser = NonNullable<
+  Awaited<ReturnType<typeof requireWorkspaceAdminUser>>
+> & { activeWorkspaceId: string };
 type EventRow = Database["public"]["Tables"]["events"]["Row"];
 type EventPlayerSnapshot = Pick<
   Database["public"]["Tables"]["event_players"]["Row"],
@@ -89,9 +92,17 @@ const roundLineupSchema = z
     }
   });
 
-async function assertAdminAction(): Promise<ActionState | null> {
-  const user = await requireAdminUser();
-  return user ? null : forbidden;
+async function requireWorkspaceAdminAction(): Promise<
+  WorkspaceAdminUser | ActionState
+> {
+  const user = await requireWorkspaceAdminUser();
+  if (!user?.activeWorkspaceId) return forbidden;
+
+  return user as WorkspaceAdminUser;
+}
+
+function isActionState(value: ActionState | object): value is ActionState {
+  return "ok" in value && "message" in value;
 }
 
 export async function signOut() {
@@ -117,8 +128,8 @@ export async function savePlayer(
   if (!parsed.success) {
     return { ok: false, message: parsed.error.issues[0].message };
   }
-  const authorizationError = await assertAdminAction();
-  if (authorizationError) return authorizationError;
+  const adminUser = await requireWorkspaceAdminAction();
+  if (isActionState(adminUser)) return adminUser;
 
   const client = createServerClient();
   if (!client) return unavailable;
@@ -133,6 +144,7 @@ export async function savePlayer(
     accountEmail = appUser.email;
   }
   const payload = {
+    workspace_id: adminUser.activeWorkspaceId,
     name: parsed.data.name,
     app_user_id: parsed.data.appUserId,
     account_email: accountEmail,
@@ -140,7 +152,11 @@ export async function savePlayer(
     is_active: parsed.data.isActive,
   };
   const result = parsed.data.id
-    ? await client.from("players").update(payload).eq("id", parsed.data.id)
+    ? await client
+        .from("players")
+        .update(payload)
+        .eq("id", parsed.data.id)
+        .eq("workspace_id", adminUser.activeWorkspaceId)
     : await client.from("players").insert(payload);
   if (isUndefinedColumnError(result.error)) {
     const fallbackPayload = {
@@ -148,12 +164,14 @@ export async function savePlayer(
       account_email: payload.account_email,
       rating: payload.rating,
       is_active: payload.is_active,
+      workspace_id: payload.workspace_id,
     };
     const fallbackResult = parsed.data.id
       ? await client
           .from("players")
           .update(fallbackPayload)
           .eq("id", parsed.data.id)
+          .eq("workspace_id", adminUser.activeWorkspaceId)
       : await client.from("players").insert(fallbackPayload);
     if (fallbackResult.error) {
       return { ok: false, message: fallbackResult.error.message };
@@ -174,8 +192,8 @@ export async function deletePlayer(
   if (!parsed.success) {
     return { ok: false, message: "Choose a valid player to delete." };
   }
-  const authorizationError = await assertAdminAction();
-  if (authorizationError) return authorizationError;
+  const adminUser = await requireWorkspaceAdminAction();
+  if (isActionState(adminUser)) return adminUser;
 
   const client = createServerClient();
   if (!client) return unavailable;
@@ -195,7 +213,11 @@ export async function deletePlayer(
     };
   }
 
-  const { error } = await client.from("players").delete().eq("id", parsed.data);
+  const { error } = await client
+    .from("players")
+    .delete()
+    .eq("id", parsed.data)
+    .eq("workspace_id", adminUser.activeWorkspaceId);
   if (error) return { ok: false, message: error.message };
 
   revalidatePath("/players");
@@ -266,11 +288,13 @@ function eventSeed(event: EventInput) {
 
 async function getOrderedSourcePlayers(
   client: ServerClient,
+  workspaceId: string,
   playerIds: string[],
 ) {
   const { data: sourcePlayers, error: playerError } = await client
     .from("players")
     .select("id,name,rating")
+    .eq("workspace_id", workspaceId)
     .in("id", playerIds);
   if (playerError || sourcePlayers.length !== playerIds.length) {
     throw new Error("One or more players are invalid.");
@@ -285,13 +309,18 @@ async function getOrderedSourcePlayers(
 
 async function insertEventSchedule(options: {
   client: ServerClient;
+  workspaceId: string;
   eventId: string;
   event: EventInput;
   capacity: ScheduleCapacity;
   seed: number;
 }) {
-  const { client, eventId, event, capacity, seed } = options;
-  const orderedPlayers = await getOrderedSourcePlayers(client, event.playerIds);
+  const { client, workspaceId, eventId, event, capacity, seed } = options;
+  const orderedPlayers = await getOrderedSourcePlayers(
+    client,
+    workspaceId,
+    event.playerIds,
+  );
   const { data: snapshots, error: snapshotError } = await client
     .from("event_players")
     .insert(
@@ -409,8 +438,8 @@ async function createEventWithErrorPath(formData: FormData, errorPath: string) {
       `${errorPath}?error=${encodeURIComponent(parsed.error.issues[0].message)}`,
     );
   }
-  const adminUser = await requireAdminUser();
-  if (!adminUser) {
+  const adminUser = await requireWorkspaceAdminUser();
+  if (!adminUser?.activeWorkspaceId) {
     redirect("/events?error=Only%20admins%20can%20create%20events");
   }
 
@@ -434,6 +463,7 @@ async function createEventWithErrorPath(formData: FormData, errorPath: string) {
   const { data: event, error: eventError } = await client
     .from("events")
     .insert({
+      workspace_id: adminUser.activeWorkspaceId,
       name: parsed.data.name,
       venue: parsed.data.venue,
       starts_at: parsed.data.startsAt.toISOString(),
@@ -455,6 +485,7 @@ async function createEventWithErrorPath(formData: FormData, errorPath: string) {
   try {
     await insertEventSchedule({
       client,
+      workspaceId: adminUser.activeWorkspaceId,
       eventId: event.id,
       event: parsed.data,
       capacity,
@@ -490,8 +521,8 @@ export async function updateEvent(formData: FormData) {
       )}`,
     );
   }
-  const adminUser = await requireAdminUser();
-  if (!adminUser) {
+  const adminUser = await requireWorkspaceAdminUser();
+  if (!adminUser?.activeWorkspaceId) {
     redirect("/events?error=Only%20admins%20can%20edit%20events");
   }
 
@@ -515,7 +546,12 @@ export async function updateEvent(formData: FormData) {
 
   const [{ data: event, error: eventError }, playersResult, roundsResult] =
     await Promise.all([
-      client.from("events").select("*").eq("id", eventId.data).single(),
+      client
+        .from("events")
+        .select("*")
+        .eq("id", eventId.data)
+        .eq("workspace_id", adminUser.activeWorkspaceId)
+        .single(),
       client
         .from("event_players")
         .select("player_id,display_order")
@@ -646,6 +682,7 @@ export async function updateEvent(formData: FormData) {
     try {
       await insertEventSchedule({
         client,
+        workspaceId: adminUser.activeWorkspaceId,
         eventId: eventId.data,
         event: parsed.data,
         capacity,
@@ -682,8 +719,8 @@ export async function deleteEvent(
   if (!parsed.success) {
     return { ok: false, message: "Choose a valid event to delete." };
   }
-  const authorizationError = await assertAdminAction();
-  if (authorizationError) return authorizationError;
+  const adminUser = await requireWorkspaceAdminAction();
+  if (isActionState(adminUser)) return adminUser;
 
   const client = createServerClient();
   if (!client) return unavailable;
@@ -694,6 +731,7 @@ export async function deleteEvent(
         .from("events")
         .select("status,starts_at")
         .eq("id", parsed.data)
+        .eq("workspace_id", adminUser.activeWorkspaceId)
         .single(),
       client.from("matches").select("status").eq("event_id", parsed.data),
     ],
@@ -717,7 +755,11 @@ export async function deleteEvent(
     };
   }
 
-  const { error } = await client.from("events").delete().eq("id", parsed.data);
+  const { error } = await client
+    .from("events")
+    .delete()
+    .eq("id", parsed.data)
+    .eq("workspace_id", adminUser.activeWorkspaceId);
   if (error) return { ok: false, message: error.message };
 
   revalidatePath("/");
@@ -733,8 +775,8 @@ export async function completeEvent(
   if (!parsed.success) {
     return { ok: false, message: "Choose a valid event to complete." };
   }
-  const authorizationError = await assertAdminAction();
-  if (authorizationError) return authorizationError;
+  const adminUser = await requireWorkspaceAdminAction();
+  if (isActionState(adminUser)) return adminUser;
 
   const client = createServerClient();
   if (!client) return unavailable;
@@ -745,6 +787,7 @@ export async function completeEvent(
         .from("events")
         .select("status,starts_at")
         .eq("id", parsed.data)
+        .eq("workspace_id", adminUser.activeWorkspaceId)
         .single(),
       client.from("matches").select("status").eq("event_id", parsed.data),
     ],
@@ -782,7 +825,8 @@ export async function completeEvent(
   const eventResult = await client
     .from("events")
     .update({ status: "completed" })
-    .eq("id", parsed.data);
+    .eq("id", parsed.data)
+    .eq("workspace_id", adminUser.activeWorkspaceId);
   if (eventResult.error) {
     return { ok: false, message: eventResult.error.message };
   }
@@ -809,8 +853,8 @@ export async function saveScore(
   if (!parsed.success) {
     return { ok: false, message: parsed.error.issues[0].message };
   }
-  const authorizationError = await assertAdminAction();
-  if (authorizationError) return authorizationError;
+  const adminUser = await requireWorkspaceAdminAction();
+  if (isActionState(adminUser)) return adminUser;
 
   const client = createServerClient();
   if (!client) return unavailable;
@@ -827,6 +871,7 @@ export async function saveScore(
         .from("events")
         .select("status,starts_at")
         .eq("id", parsed.data.eventId)
+        .eq("workspace_id", adminUser.activeWorkspaceId)
         .single(),
     ],
   );
@@ -862,8 +907,8 @@ export async function saveScore(
 }
 
 export async function updateTimer(formData: FormData) {
-  const adminUser = await requireAdminUser();
-  if (!adminUser) return;
+  const adminUser = await requireWorkspaceAdminUser();
+  if (!adminUser?.activeWorkspaceId) return;
 
   const client = createServerClient();
   if (!client) return;
@@ -878,7 +923,12 @@ export async function updateTimer(formData: FormData) {
       .eq("id", matchId)
       .eq("event_id", eventId)
       .single(),
-    client.from("events").select("status,starts_at").eq("id", eventId).single(),
+    client
+      .from("events")
+      .select("status,starts_at")
+      .eq("id", eventId)
+      .eq("workspace_id", adminUser.activeWorkspaceId)
+      .single(),
   ]);
   if (
     !match ||
@@ -932,8 +982,8 @@ export async function updateRoundLineup(
   if (!parsed.success) {
     return { ok: false, message: parsed.error.issues[0].message };
   }
-  const authorizationError = await assertAdminAction();
-  if (authorizationError) return authorizationError;
+  const adminUser = await requireWorkspaceAdminAction();
+  if (isActionState(adminUser)) return adminUser;
 
   const client = createServerClient();
   if (!client) return unavailable;
@@ -960,6 +1010,7 @@ export async function updateRoundLineup(
         .from("events")
         .select("status,starts_at")
         .eq("id", eventId)
+        .eq("workspace_id", adminUser.activeWorkspaceId)
         .single(),
       client
         .from("event_rounds")
@@ -1076,12 +1127,20 @@ export async function updateRoundLineup(
 }
 
 export async function regenerateEvent(formData: FormData) {
-  const adminUser = await requireAdminUser();
-  if (!adminUser) return;
+  const adminUser = await requireWorkspaceAdminUser();
+  if (!adminUser?.activeWorkspaceId) return;
 
   const client = createServerClient();
   if (!client) return;
   const eventId = String(formData.get("eventId"));
+  const { data: event } = await client
+    .from("events")
+    .select("id")
+    .eq("id", eventId)
+    .eq("workspace_id", adminUser.activeWorkspaceId)
+    .single();
+  if (!event) return;
+
   const { data: matches } = await client
     .from("matches")
     .select("status")

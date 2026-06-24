@@ -1,9 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
-import {
-  ensureDefaultWorkspaceForUser,
-  isWorkspaceAdminRole,
-} from "@/lib/workspaces";
+import { isWorkspaceAdminRole } from "@/lib/roles";
+import { ensureDefaultWorkspaceForUser } from "@/lib/workspaces";
 
 type MockWorkspaceClient = {
   insertWorkspace: ReturnType<typeof vi.fn>;

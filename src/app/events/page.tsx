@@ -4,7 +4,7 @@ import Link from "next/link";
 import { AccessLimited } from "@/components/access-limited";
 import { Badge, Card, SectionHeading } from "@/components/ui";
 import { canViewPrivateData, listEvents } from "@/lib/data";
-import { isAdminRole } from "@/lib/roles";
+import { isWorkspaceAdminRole } from "@/lib/roles";
 import { getAuthenticatedUser } from "@/lib/supabase/server";
 import { formatDate } from "@/lib/utils";
 
@@ -21,9 +21,11 @@ export default async function EventsPage() {
   if (!(await canViewPrivateData(user))) {
     return <AccessLimited />;
   }
+  const workspaceId = user?.activeWorkspaceId;
+  if (!workspaceId) return <AccessLimited />;
 
-  const events = await listEvents();
-  const canManage = user ? isAdminRole(user.role) : false;
+  const events = await listEvents(workspaceId);
+  const canManage = isWorkspaceAdminRole(user?.activeWorkspaceRole ?? null);
   return (
     <div className="space-y-7">
       <SectionHeading

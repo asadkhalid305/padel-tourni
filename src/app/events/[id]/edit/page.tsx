@@ -6,7 +6,7 @@ import { EventForm } from "@/components/event-form";
 import { PageBackLink } from "@/components/page-back-link";
 import { SectionHeading } from "@/components/ui";
 import { getEventFormInitialValues, listPlayers } from "@/lib/data";
-import { isAdminRole } from "@/lib/roles";
+import { isWorkspaceAdminRole } from "@/lib/roles";
 import {
   getAuthenticatedUser,
   isSupabaseConfigured,
@@ -21,16 +21,18 @@ export default async function EditEventPage({
   params: Promise<{ id: string }>;
   searchParams: Promise<{ error?: string }>;
 }) {
-  const [{ id }, { error }, players, initialValues, user] = await Promise.all([
+  const [{ id }, { error }, user] = await Promise.all([
     params,
     searchParams,
-    listPlayers(),
-    params.then(({ id: eventId }) => getEventFormInitialValues(eventId)),
     getAuthenticatedUser(),
   ]);
-  if (!user || !isAdminRole(user.role)) {
+  if (!user || !isWorkspaceAdminRole(user.activeWorkspaceRole)) {
     redirect("/events");
   }
+  const [players, initialValues] = await Promise.all([
+    listPlayers(user.activeWorkspaceId),
+    getEventFormInitialValues(id, user.activeWorkspaceId),
+  ]);
   if (!initialValues) notFound();
 
   async function updateCurrentEvent(formData: FormData) {

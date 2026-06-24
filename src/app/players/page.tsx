@@ -6,7 +6,7 @@ import {
   listLinkableAppUsers,
   listPlayers,
 } from "@/lib/data";
-import { isAdminRole, isSuperAdminRole } from "@/lib/roles";
+import { isSuperAdminRole, isWorkspaceAdminRole } from "@/lib/roles";
 import { getAuthenticatedUser } from "@/lib/supabase/server";
 
 export const metadata = { title: "Players" };
@@ -16,12 +16,14 @@ export default async function PlayersPage() {
   if (!(await canViewPrivateData(user))) {
     return <AccessLimited />;
   }
+  const workspaceId = user?.activeWorkspaceId;
+  if (!workspaceId) return <AccessLimited />;
 
-  const canManage = user ? isAdminRole(user.role) : false;
+  const canManage = isWorkspaceAdminRole(user?.activeWorkspaceRole ?? null);
   const canManageRoles = user ? isSuperAdminRole(user.role) : false;
   const [players, linkableUsers] = await Promise.all([
-    listPlayers(),
-    canManage ? listLinkableAppUsers() : Promise.resolve([]),
+    listPlayers(workspaceId),
+    canManage ? listLinkableAppUsers(workspaceId) : Promise.resolve([]),
   ]);
   return (
     <div className="space-y-7">

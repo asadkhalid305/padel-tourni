@@ -4,7 +4,7 @@ import { createEvent } from "@/app/actions";
 import { EventForm } from "@/components/event-form";
 import { SectionHeading } from "@/components/ui";
 import { listPlayers } from "@/lib/data";
-import { isAdminRole } from "@/lib/roles";
+import { isWorkspaceAdminRole } from "@/lib/roles";
 import {
   getAuthenticatedUser,
   isSupabaseConfigured,
@@ -19,11 +19,11 @@ export default async function NewEventPage({
   searchParams: Promise<{ error?: string }>;
 }) {
   const [players, { error }, user] = await Promise.all([
-    listPlayers(),
+    getAuthenticatedUser().then((user) => listPlayers(user?.activeWorkspaceId)),
     searchParams,
     getAuthenticatedUser(),
   ]);
-  if (!user || !isAdminRole(user.role)) {
+  if (!user || !isWorkspaceAdminRole(user.activeWorkspaceRole)) {
     redirect("/events");
   }
   const activePlayers = players.filter((player) => player.isActive);

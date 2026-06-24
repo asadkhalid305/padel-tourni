@@ -18,8 +18,13 @@ export default async function DashboardPage() {
   if (!(await canViewPrivateData(user))) {
     return <AccessLimited />;
   }
+  const workspaceId = user?.activeWorkspaceId;
+  if (!workspaceId) return <AccessLimited />;
 
-  const [players, events] = await Promise.all([listPlayers(), listEvents()]);
+  const [players, events] = await Promise.all([
+    listPlayers(workspaceId),
+    listEvents(workspaceId),
+  ]);
   const liveEvents = events.filter((event) => event.status === "live");
   const completedMatches = events.reduce(
     (total, event) => total + event.completedMatches,

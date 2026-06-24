@@ -8,12 +8,11 @@ import {
   DEFAULT_SUPER_ADMIN_EMAIL,
   isAdminRole,
   isSuperAdminRole,
+  isWorkspaceAdminRole,
   type AppUserRole,
-} from "@/lib/roles";
-import {
-  ensureDefaultWorkspaceForUser,
   type WorkspaceRole,
-} from "@/lib/workspaces";
+} from "@/lib/roles";
+import { ensureDefaultWorkspaceForUser } from "@/lib/workspaces";
 import type { Database } from "@/types/database";
 
 export function isSupabaseConfigured() {
@@ -114,6 +113,11 @@ export async function requireAdminUser(): Promise<AuthenticatedAppUser | null> {
 export async function requireSuperAdminUser(): Promise<AuthenticatedAppUser | null> {
   const user = await getAuthenticatedUser();
   return user && isSuperAdminRole(user.role) ? user : null;
+}
+
+export async function requireWorkspaceAdminUser(): Promise<AuthenticatedAppUser | null> {
+  const user = await getAuthenticatedUser();
+  return user && isWorkspaceAdminRole(user.activeWorkspaceRole) ? user : null;
 }
 
 export async function ensureAppUser({

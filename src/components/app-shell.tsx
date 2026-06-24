@@ -16,7 +16,7 @@ import type { ReactNode } from "react";
 import { signOut } from "@/app/actions";
 import { BrandLogo } from "@/components/brand-logo";
 import { PendingSubmitButton } from "@/components/pending-submit-button";
-import { isAdminRole } from "@/lib/roles";
+import { isWorkspaceAdminRole } from "@/lib/roles";
 import { cn } from "@/lib/utils";
 import type { AuthenticatedAppUser } from "@/lib/supabase/server";
 
@@ -36,7 +36,7 @@ export function AppShell({
 }) {
   const pathname = usePathname();
   const user = use(userPromise);
-  const isAdmin = user ? isAdminRole(user.role) : false;
+  const isAdmin = user ? isWorkspaceAdminRole(user.activeWorkspaceRole) : false;
 
   if (pathname === "/login") {
     return children;
