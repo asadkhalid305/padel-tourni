@@ -8,7 +8,7 @@ import {
   isSupabaseAuthConfigured,
 } from "@/lib/supabase/server";
 
-export async function signInWithGoogle() {
+export async function signInWithGoogle(formData: FormData) {
   if (!isSupabaseAuthConfigured()) {
     redirect("/login?error=auth-not-configured");
   }
@@ -18,6 +18,7 @@ export async function signInWithGoogle() {
     redirect("/login?error=auth-not-configured");
   }
 
+  const next = String(formData.get("next") ?? "/");
   const origin =
     (await headers()).get("origin") ??
     process.env.NEXT_PUBLIC_APP_ORIGIN ??
@@ -25,7 +26,7 @@ export async function signInWithGoogle() {
   const { data, error } = await authClient.auth.signInWithOAuth({
     provider: "google",
     options: {
-      redirectTo: `${origin}/auth/callback`,
+      redirectTo: `${origin}/auth/callback?next=${encodeURIComponent(next)}`,
     },
   });
 

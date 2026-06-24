@@ -1,5 +1,7 @@
 import "server-only";
 
+import { createHash } from "node:crypto";
+
 import { canChangeEventSchedule } from "@/domain/event-mutations";
 import { effectiveEventStatus } from "@/domain/event-status";
 import { calculateStandings } from "@/domain/standings";
@@ -46,6 +48,20 @@ export type LinkableAppUser = {
   email: string;
   displayName: string;
   role: AppUserRole;
+};
+
+export type WorkspaceInvite = {
+  id: string;
+  invitedEmail: string | null;
+  status: string;
+  expiresAt: string;
+  createdAt: string;
+};
+
+export type WorkspaceInvitePreview = {
+  status: "pending" | "accepted" | "revoked" | "expired" | "missing";
+  invitedEmail: string | null;
+  expiresAt: string | null;
 };
 
 type EventSummary = {
@@ -252,6 +268,59 @@ export async function listLinkableAppUsers(
       displayName: user.display_name,
       role: user.role,
     }));
+}
+
+export async function listWorkspaceInvites(
+  workspaceId?: string | null,
+): Promise<WorkspaceInvite[]> {
+  const client = createServerClient();
+  if (!client || !workspaceId) return [];
+
+  const { data, error } = await client
+    .from("workspace_invites")
+    .select("id,invited_email,status,expires_at,created_at")
+    .eq("workspace_id", workspaceId)
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+
+  return data.map((invite) => ({
+    id: invite.id,
+    invitedEmail: invite.invited_email,
+    status: invite.status,
+    expiresAt: invite.expires_at,
+    createdAt: invite.created_at,
+  }));
+}
+
+export async function getWorkspaceInvitePreview(
+  token: string,
+): Promise<WorkspaceInvitePreview> {
+  const client = createServerClient();
+  if (!client) {
+    return { status: "missing", invitedEmail: null, expiresAt: null };
+  }
+
+  const tokenHash = createHash("sha256").update(token).digest("hex");
+  const { data, error } = await client
+    .from("workspace_invites")
+    .select("invited_email,status,expires_at")
+    .eq("token_hash", tokenHash)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) return { status: "missing", invitedEmail: null, expiresAt: null };
+  if (data.status === "pending" && new Date(data.expires_at) <= new Date()) {
+    return {
+      status: "expired",
+      invitedEmail: data.invited_email,
+      expiresAt: data.expires_at,
+    };
+  }
+
+  return {
+    status: data.status,
+    invitedEmail: data.invited_email,
+    expiresAt: data.expires_at,
+  };
 }
 
 export async function canViewPrivateData(

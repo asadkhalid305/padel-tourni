@@ -36,6 +36,52 @@ describe("workspace foundations", () => {
     expect(client.insertMembership).not.toHaveBeenCalled();
   });
 
+  it("prefers a valid active workspace membership from the cookie", async () => {
+    const client = mockWorkspaceClient({
+      preferredMembership: { workspace_id: "workspace-2", role: "member" },
+      existingMembership: { workspace_id: "workspace-1", role: "owner" },
+    });
+
+    await expect(
+      ensureDefaultWorkspaceForUser(
+        client as never,
+        {
+          id: "user-1",
+          email: "owner@example.com",
+          displayName: "Owner",
+        },
+        "workspace-2",
+      ),
+    ).resolves.toEqual({
+      workspaceId: "workspace-2",
+      role: "member",
+    });
+
+    expect(client.insertWorkspace).not.toHaveBeenCalled();
+    expect(client.insertMembership).not.toHaveBeenCalled();
+  });
+
+  it("ignores a stale active workspace cookie when the user is not a member", async () => {
+    const client = mockWorkspaceClient({
+      existingMembership: { workspace_id: "workspace-1", role: "owner" },
+    });
+
+    await expect(
+      ensureDefaultWorkspaceForUser(
+        client as never,
+        {
+          id: "user-1",
+          email: "owner@example.com",
+          displayName: "Owner",
+        },
+        "workspace-2",
+      ),
+    ).resolves.toEqual({
+      workspaceId: "workspace-1",
+      role: "owner",
+    });
+  });
+
   it("creates a private default workspace owned by a new signed-in user", async () => {
     const client = mockWorkspaceClient();
 
@@ -63,7 +109,14 @@ describe("workspace foundations", () => {
 });
 
 function mockWorkspaceClient(options?: {
-  existingMembership?: { workspace_id: string; role: "owner" | "admin" };
+  preferredMembership?: {
+    workspace_id: string;
+    role: "owner" | "admin" | "member";
+  };
+  existingMembership?: {
+    workspace_id: string;
+    role: "owner" | "admin" | "member";
+  };
 }): MockWorkspaceClient {
   const insertWorkspace = vi.fn(() => ({
     select: vi.fn(() => ({
@@ -87,19 +140,30 @@ function mockWorkspaceClient(options?: {
     insertMembership,
     from: vi.fn((table: string) => {
       if (table === "workspace_memberships") {
-        return {
-          select: vi.fn(() => ({
-            eq: vi.fn(() => ({
-              order: vi.fn(() => ({
-                limit: vi.fn(() => ({
-                  maybeSingle: vi.fn().mockResolvedValue({
-                    data: options?.existingMembership ?? null,
-                    error: null,
-                  }),
-                })),
+        const selectMembership = vi.fn(() => {
+          const secondEq = vi.fn(() => ({
+            maybeSingle: vi.fn().mockResolvedValue({
+              data: options?.preferredMembership ?? null,
+              error: null,
+            }),
+          }));
+          const firstEq = vi.fn(() => ({
+            eq: secondEq,
+            order: vi.fn(() => ({
+              limit: vi.fn(() => ({
+                maybeSingle: vi.fn().mockResolvedValue({
+                  data: options?.existingMembership ?? null,
+                  error: null,
+                }),
               })),
             })),
-          })),
+          }));
+
+          return { eq: firstEq };
+        });
+
+        return {
+          select: selectMembership,
           insert: insertMembership,
         };
       }

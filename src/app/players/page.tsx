@@ -1,10 +1,12 @@
 import { AccessLimited } from "@/components/access-limited";
 import { PlayerManager } from "@/components/player-manager";
 import { SectionHeading } from "@/components/ui";
+import { WorkspaceInviteManager } from "@/components/workspace-invite-manager";
 import {
   canViewPrivateData,
   listLinkableAppUsers,
   listPlayers,
+  listWorkspaceInvites,
 } from "@/lib/data";
 import { isSuperAdminRole, isWorkspaceAdminRole } from "@/lib/roles";
 import { getAuthenticatedUser } from "@/lib/supabase/server";
@@ -21,9 +23,10 @@ export default async function PlayersPage() {
 
   const canManage = isWorkspaceAdminRole(user?.activeWorkspaceRole ?? null);
   const canManageRoles = user ? isSuperAdminRole(user.role) : false;
-  const [players, linkableUsers] = await Promise.all([
+  const [players, linkableUsers, invites] = await Promise.all([
     listPlayers(workspaceId),
     canManage ? listLinkableAppUsers(workspaceId) : Promise.resolve([]),
+    canManage ? listWorkspaceInvites(workspaceId) : Promise.resolve([]),
   ]);
   return (
     <div className="space-y-7">
@@ -38,6 +41,7 @@ export default async function PlayersPage() {
         canManageRoles={canManageRoles}
         linkableUsers={linkableUsers}
       />
+      {canManage ? <WorkspaceInviteManager invites={invites} /> : null}
     </div>
   );
 }

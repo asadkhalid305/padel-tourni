@@ -1,6 +1,9 @@
 "use server";
 
+import { createHash, randomBytes } from "node:crypto";
+
 import { revalidatePath } from "next/cache";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 
@@ -18,8 +21,10 @@ import { calculateScheduleCapacity } from "@/domain/schedule-calculations";
 import type { ScheduleCapacity } from "@/domain/schedule-calculations";
 import { generateSchedule } from "@/domain/scheduler";
 import {
+  ACTIVE_WORKSPACE_COOKIE,
   createAuthClient,
   createServerClient,
+  getAuthenticatedUser,
   requireSuperAdminUser,
   requireWorkspaceAdminUser,
 } from "@/lib/supabase/server";
@@ -30,6 +35,7 @@ import type { Database } from "@/types/database";
 export type ActionState = {
   ok: boolean;
   message: string;
+  inviteUrl?: string;
 };
 
 const unavailable: ActionState = {
@@ -48,6 +54,12 @@ const roleChangeSchema = z.object({
 });
 
 const eventIdSchema = z.string().uuid();
+const inviteTokenSchema = z.string().min(32).max(256);
+const inviteEmailSchema = z.preprocess((value) => {
+  if (typeof value !== "string") return value;
+  const trimmed = value.trim().toLowerCase();
+  return trimmed ? trimmed : null;
+}, z.string().email().nullable());
 type EventInput = z.infer<typeof eventSchema>;
 type ServerClient = NonNullable<ReturnType<typeof createServerClient>>;
 type WorkspaceAdminUser = NonNullable<
@@ -103,6 +115,19 @@ async function requireWorkspaceAdminAction(): Promise<
 
 function isActionState(value: ActionState | object): value is ActionState {
   return "ok" in value && "message" in value;
+}
+
+function hashInviteToken(token: string) {
+  return createHash("sha256").update(token).digest("hex");
+}
+
+async function requestOrigin() {
+  const headerStore = await headers();
+  return (
+    headerStore.get("origin") ??
+    process.env.NEXT_PUBLIC_APP_ORIGIN ??
+    "http://localhost:3100"
+  );
 }
 
 export async function signOut() {
@@ -268,6 +293,142 @@ export async function setPlayerAdminRole(
     ok: true,
     message: `Role updated to ${parsed.data.role.replace("_", " ")}.`,
   };
+}
+
+export async function createWorkspaceInvite(
+  _previous: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const adminUser = await requireWorkspaceAdminAction();
+  if (isActionState(adminUser)) return adminUser;
+
+  const invitedEmail = inviteEmailSchema.safeParse(formData.get("email"));
+  if (!invitedEmail.success) {
+    return { ok: false, message: invitedEmail.error.issues[0].message };
+  }
+
+  const client = createServerClient();
+  if (!client) return unavailable;
+
+  const token = randomBytes(32).toString("base64url");
+  const expiresAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
+  const { error } = await client.from("workspace_invites").insert({
+    workspace_id: adminUser.activeWorkspaceId,
+    token_hash: hashInviteToken(token),
+    invited_email: invitedEmail.data,
+    created_by_app_user_id: adminUser.id,
+    expires_at: expiresAt.toISOString(),
+  });
+  if (error) return { ok: false, message: error.message };
+
+  const inviteUrl = `${await requestOrigin()}/invites/${token}`;
+  revalidatePath("/players");
+  return {
+    ok: true,
+    message: "Invite link created. Share it with the person you want to add.",
+    inviteUrl,
+  };
+}
+
+export async function revokeWorkspaceInvite(
+  _previous: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const adminUser = await requireWorkspaceAdminAction();
+  if (isActionState(adminUser)) return adminUser;
+
+  const inviteId = z.string().uuid().safeParse(formData.get("inviteId"));
+  if (!inviteId.success) {
+    return { ok: false, message: "Choose a valid invite." };
+  }
+
+  const client = createServerClient();
+  if (!client) return unavailable;
+
+  const { error } = await client
+    .from("workspace_invites")
+    .update({ status: "revoked" })
+    .eq("id", inviteId.data)
+    .eq("workspace_id", adminUser.activeWorkspaceId)
+    .eq("status", "pending");
+  if (error) return { ok: false, message: error.message };
+
+  revalidatePath("/players");
+  return { ok: true, message: "Invite revoked." };
+}
+
+export async function acceptWorkspaceInvite(
+  _previous: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const token = inviteTokenSchema.safeParse(formData.get("token"));
+  if (!token.success) {
+    return { ok: false, message: "This invite link is invalid." };
+  }
+
+  const user = await getAuthenticatedUser();
+  if (!user) {
+    return { ok: false, message: "Sign in to accept this invite." };
+  }
+
+  const client = createServerClient();
+  if (!client) return unavailable;
+
+  const { data: invite, error: inviteError } = await client
+    .from("workspace_invites")
+    .select("id,workspace_id,invited_email,status,expires_at")
+    .eq("token_hash", hashInviteToken(token.data))
+    .maybeSingle();
+  if (inviteError) return { ok: false, message: inviteError.message };
+  if (!invite) return { ok: false, message: "This invite was not found." };
+  if (invite.status !== "pending") {
+    return { ok: false, message: "This invite is no longer active." };
+  }
+  if (new Date(invite.expires_at).getTime() <= Date.now()) {
+    await client
+      .from("workspace_invites")
+      .update({ status: "expired" })
+      .eq("id", invite.id);
+    return { ok: false, message: "This invite has expired." };
+  }
+  if (invite.invited_email && invite.invited_email !== user.email) {
+    return {
+      ok: false,
+      message: "This invite was created for a different email address.",
+    };
+  }
+
+  const { error: membershipError } = await client
+    .from("workspace_memberships")
+    .upsert(
+      {
+        workspace_id: invite.workspace_id,
+        app_user_id: user.id,
+        role: "member",
+      },
+      { onConflict: "workspace_id,app_user_id", ignoreDuplicates: true },
+    );
+  if (membershipError) {
+    return { ok: false, message: membershipError.message };
+  }
+
+  const { error: updateError } = await client
+    .from("workspace_invites")
+    .update({
+      status: "accepted",
+      accepted_by_app_user_id: user.id,
+      accepted_at: new Date().toISOString(),
+    })
+    .eq("id", invite.id);
+  if (updateError) return { ok: false, message: updateError.message };
+
+  const cookieStore = await cookies();
+  cookieStore.set(ACTIVE_WORKSPACE_COOKIE, invite.workspace_id, {
+    sameSite: "lax",
+    path: "/",
+  });
+  revalidatePath("/");
+  redirect("/");
 }
 
 function parseEventFormData(formData: FormData) {

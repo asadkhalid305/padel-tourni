@@ -8,9 +8,9 @@ import { PendingSubmitButton } from "@/components/pending-submit-button";
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; next?: string }>;
 }) {
-  const { error } = await searchParams;
+  const { error, next = "/" } = await searchParams;
   const errorMessage = formatLoginErrorMessage(error);
 
   return (
@@ -40,6 +40,7 @@ export default async function LoginPage({
           center.
         </p>
         <form action={signInWithGoogle} className="mt-8">
+          <input type="hidden" name="next" value={next} />
           <PendingSubmitButton
             className="inline-flex min-h-12 w-full items-center justify-center gap-3 rounded-xl bg-[var(--ink)] px-5 text-sm font-black text-white shadow-lg shadow-emerald-950/15 transition hover:bg-[#173d31]"
             pendingLabel="Opening Google..."

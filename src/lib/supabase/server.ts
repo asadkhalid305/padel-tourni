@@ -15,6 +15,8 @@ import {
 import { ensureDefaultWorkspaceForUser } from "@/lib/workspaces";
 import type { Database } from "@/types/database";
 
+export const ACTIVE_WORKSPACE_COOKIE = "padeltour_active_workspace_id";
+
 export function isSupabaseConfigured() {
   return Boolean(
     isUsableSupabaseUrl(process.env.NEXT_PUBLIC_SUPABASE_URL) &&
@@ -149,11 +151,16 @@ export async function ensureAppUser({
   if (error) throw error;
 
   const promoted = await promoteDefaultSuperAdmin(data);
-  const membership = await ensureDefaultWorkspaceForUser(client, {
-    id: promoted.id,
-    email: promoted.email,
-    displayName: promoted.display_name,
-  });
+  const cookieStore = await cookies();
+  const membership = await ensureDefaultWorkspaceForUser(
+    client,
+    {
+      id: promoted.id,
+      email: promoted.email,
+      displayName: promoted.display_name,
+    },
+    cookieStore.get(ACTIVE_WORKSPACE_COOKIE)?.value,
+  );
 
   return {
     id: promoted.id,

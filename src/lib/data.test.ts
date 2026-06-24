@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { createHash } from "node:crypto";
 
 const supabaseMocks = vi.hoisted(() => ({
   createServerClient: vi.fn(),
@@ -11,7 +12,9 @@ vi.mock("@/lib/supabase/server", () => ({
 
 import {
   canViewPrivateData,
+  getWorkspaceInvitePreview,
   listEvents,
+  listWorkspaceInvites,
   listLinkableAppUsers,
   listPlayers,
 } from "@/lib/data";
@@ -189,5 +192,71 @@ describe("workspace-scoped reads", () => {
       },
     ]);
     expect(appUserIdFilter).toHaveBeenCalledWith("id", ["owner-user"]);
+  });
+
+  it("lists workspace invites only for the active workspace", async () => {
+    const workspaceFilter = vi.fn(() => ({
+      order: vi.fn().mockResolvedValue({
+        data: [
+          {
+            id: "invite-1",
+            invited_email: "member@example.com",
+            status: "pending",
+            expires_at: "2999-01-01T00:00:00.000Z",
+            created_at: "2026-06-24T10:00:00.000Z",
+          },
+        ],
+        error: null,
+      }),
+    }));
+    supabaseMocks.createServerClient.mockReturnValue({
+      from: vi.fn(() => ({
+        select: vi.fn(() => ({
+          eq: workspaceFilter,
+        })),
+      })),
+    });
+
+    await expect(listWorkspaceInvites("workspace-1")).resolves.toEqual([
+      {
+        id: "invite-1",
+        invitedEmail: "member@example.com",
+        status: "pending",
+        expiresAt: "2999-01-01T00:00:00.000Z",
+        createdAt: "2026-06-24T10:00:00.000Z",
+      },
+    ]);
+    expect(workspaceFilter).toHaveBeenCalledWith("workspace_id", "workspace-1");
+  });
+
+  it("previews invite status without exposing workspace details", async () => {
+    const token = "abcdefghijklmnopqrstuvwxyz1234567890";
+    const tokenFilter = vi.fn(() => ({
+      maybeSingle: vi.fn().mockResolvedValue({
+        data: {
+          invited_email: null,
+          status: "pending",
+          expires_at: "2999-01-01T00:00:00.000Z",
+        },
+        error: null,
+      }),
+    }));
+    supabaseMocks.createServerClient.mockReturnValue({
+      from: vi.fn(() => ({
+        select: vi.fn(() => ({
+          eq: tokenFilter,
+        })),
+      })),
+    });
+
+    await expect(getWorkspaceInvitePreview(token)).resolves.toEqual({
+      status: "pending",
+      invitedEmail: null,
+      expiresAt: "2999-01-01T00:00:00.000Z",
+    });
+    expect(tokenFilter).toHaveBeenCalledWith(
+      "token_hash",
+      createHash("sha256").update(token).digest("hex"),
+    );
   });
 });

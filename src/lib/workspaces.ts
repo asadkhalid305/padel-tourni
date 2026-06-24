@@ -13,7 +13,26 @@ export type WorkspaceMembership = {
 export async function ensureDefaultWorkspaceForUser(
   client: SupabaseClient<Database>,
   user: { id: string; displayName: string; email: string },
+  preferredWorkspaceId?: string | null,
 ): Promise<WorkspaceMembership> {
+  if (preferredWorkspaceId) {
+    const { data: preferredMembership, error: preferredMembershipError } =
+      await client
+        .from("workspace_memberships")
+        .select("workspace_id,role")
+        .eq("app_user_id", user.id)
+        .eq("workspace_id", preferredWorkspaceId)
+        .maybeSingle();
+
+    if (preferredMembershipError) throw preferredMembershipError;
+    if (preferredMembership) {
+      return {
+        workspaceId: preferredMembership.workspace_id,
+        role: preferredMembership.role,
+      };
+    }
+  }
+
   const { data: existingMembership, error: existingMembershipError } =
     await client
       .from("workspace_memberships")
