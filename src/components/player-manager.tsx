@@ -123,9 +123,9 @@ export function PlayerManager({
                     ) : player.appUserId ? (
                       <Badge tone="warning">Linked account missing</Badge>
                     ) : player.accountEmail ? (
-                      <Badge tone="neutral">Pending invite</Badge>
+                      <Badge tone="neutral">Email noted</Badge>
                     ) : (
-                      <Badge tone="neutral">No account linked</Badge>
+                      <Badge tone="neutral">Manual player</Badge>
                     )}
                   </div>
                 </div>
@@ -153,9 +153,16 @@ export function PlayerManager({
               </div>
             ))
           ) : (
-            <p className="p-6 text-center text-sm font-semibold text-slate-500">
-              No players yet. Add the first player to build your roster.
-            </p>
+            <div className="rounded-2xl bg-slate-50 p-5">
+              <p className="text-sm font-black text-[var(--ink)]">
+                No workspace players yet.
+              </p>
+              <p className="mt-1 max-w-xl text-sm leading-6 text-slate-500">
+                Add manual players here to use them in events. Workspace members
+                are signed-in accounts below; link a member to a player when the
+                real person joins.
+              </p>
+            </div>
           )}
         </div>
       </Card>

@@ -34,9 +34,9 @@ export default async function PlayersPage() {
   return (
     <div className="space-y-7">
       <SectionHeading
-        eyebrow="Reusable roster"
+        eyebrow="Workspace players"
         title="Players"
-        description="Ratings guide team balance. Event snapshots preserve historical names and ratings."
+        description="Add manual event participants here, then link them to signed-in workspace members when the real accounts join."
       />
       <PlayerManager
         players={players}

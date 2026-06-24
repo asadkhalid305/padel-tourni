@@ -68,6 +68,12 @@ const inviteEmailSchema = z.preprocess((value) => {
   const trimmed = value.trim().toLowerCase();
   return trimmed ? trimmed : null;
 }, z.string().email().nullable());
+const inviteExpiryDaysSchema = z.coerce
+  .number()
+  .int()
+  .min(1)
+  .max(30)
+  .default(14);
 type EventInput = z.infer<typeof eventSchema>;
 type ServerClient = NonNullable<ReturnType<typeof createServerClient>>;
 type WorkspaceAdminUser = NonNullable<
@@ -456,12 +462,23 @@ export async function createWorkspaceInvite(
   if (!invitedEmail.success) {
     return { ok: false, message: invitedEmail.error.issues[0].message };
   }
+  const expiresInDays = inviteExpiryDaysSchema.safeParse(
+    formData.get("expiresInDays") || undefined,
+  );
+  if (!expiresInDays.success) {
+    return {
+      ok: false,
+      message: "Choose an invite expiry between 1 and 30 days.",
+    };
+  }
 
   const client = createServerClient();
   if (!client) return unavailable;
 
   const token = randomBytes(32).toString("base64url");
-  const expiresAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
+  const expiresAt = new Date(
+    Date.now() + expiresInDays.data * 24 * 60 * 60 * 1000,
+  );
   const { error } = await client.from("workspace_invites").insert({
     workspace_id: adminUser.activeWorkspaceId,
     token_hash: hashInviteToken(token),

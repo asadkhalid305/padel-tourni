@@ -30,9 +30,11 @@ const navigation = [
 export function AppShell({
   children,
   userPromise,
+  activePlayerCountPromise,
 }: {
   children: ReactNode;
   userPromise: Promise<AuthenticatedAppUser | null>;
+  activePlayerCountPromise: Promise<number>;
 }) {
   const pathname = usePathname();
 
@@ -42,6 +44,8 @@ export function AppShell({
 
   const user = use(userPromise);
   const isAdmin = user ? isWorkspaceAdminRole(user.activeWorkspaceRole) : false;
+  const activePlayerCount = use(activePlayerCountPromise);
+  const canCreateEvent = activePlayerCount >= 4;
 
   return (
     <div className="h-dvh overflow-hidden lg:grid lg:grid-cols-[250px_1fr]">
@@ -73,13 +77,7 @@ export function AppShell({
           })}
         </nav>
         {isAdmin ? (
-          <Link
-            href="/events/new"
-            className="mt-6 flex min-h-12 items-center justify-center gap-2 rounded-xl bg-[var(--lime)] px-4 text-sm font-black text-[var(--ink)] transition hover:bg-[#c9f66d]"
-          >
-            <Plus size={18} />
-            New event
-          </Link>
+          <CreateEventShortcut canCreateEvent={canCreateEvent} sidebar />
         ) : null}
         <div className="mt-auto space-y-3">
           <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
@@ -112,12 +110,7 @@ export function AppShell({
             </p>
             <div className="flex items-center gap-2">
               {isAdmin ? (
-                <Link
-                  href="/events/new"
-                  className="rounded-xl bg-[var(--ink)] px-4 py-2.5 text-sm font-bold text-white"
-                >
-                  New event
-                </Link>
+                <CreateEventShortcut canCreateEvent={canCreateEvent} />
               ) : null}
               <form action={signOut}>
                 <PendingSubmitButton
@@ -133,7 +126,7 @@ export function AppShell({
           </div>
         </header>
         <div className="min-h-0 flex-1 overflow-y-auto">
-          <div className="mx-auto max-w-[1500px] p-5 pb-28 sm:p-7 sm:pb-28 lg:p-9">
+          <div className="mx-auto max-w-[1500px] p-5 pb-28 sm:p-7 sm:pb-28 lg:p-9 lg:pb-9">
             {children}
           </div>
         </div>
@@ -161,5 +154,46 @@ export function AppShell({
         })}
       </nav>
     </div>
+  );
+}
+
+function CreateEventShortcut({
+  canCreateEvent,
+  sidebar = false,
+}: {
+  canCreateEvent: boolean;
+  sidebar?: boolean;
+}) {
+  const label = "Create event";
+
+  if (!canCreateEvent) {
+    return (
+      <span
+        aria-disabled="true"
+        title="Add at least four active players before creating an event."
+        className={cn(
+          "inline-flex cursor-not-allowed items-center justify-center gap-2 rounded-xl bg-slate-200 px-4 text-sm font-black text-slate-500",
+          sidebar ? "mt-6 min-h-12" : "min-h-10 py-2.5",
+        )}
+      >
+        {sidebar ? <Plus size={18} /> : null}
+        {label}
+      </span>
+    );
+  }
+
+  return (
+    <Link
+      href="/events/new"
+      className={cn(
+        "inline-flex items-center justify-center gap-2 rounded-xl text-sm font-black transition",
+        sidebar
+          ? "mt-6 min-h-12 bg-[var(--lime)] px-4 text-[var(--ink)] hover:bg-[#c9f66d]"
+          : "min-h-10 bg-[var(--ink)] px-4 py-2.5 text-white",
+      )}
+    >
+      {sidebar ? <Plus size={18} /> : null}
+      {label}
+    </Link>
   );
 }

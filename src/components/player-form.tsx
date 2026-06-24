@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useEffect, useRef } from "react";
+import { useRouter } from "next/navigation";
 
 import {
   deletePlayer,
@@ -48,7 +49,8 @@ export function PlayerForm({
         {player ? "Edit player" : "Add a player"}
       </h2>
       <p className="mt-1 text-sm text-slate-500">
-        Ratings run from 1 to 10 and help balance teams.
+        Workspace players are event participants. They can stay manual or be
+        linked to a signed-in workspace member later.
       </p>
       <form
         key={player?.id ?? "new"}
@@ -70,7 +72,7 @@ export function PlayerForm({
           />
         </label>
         <label className="block">
-          <span className="field-label">Pending invite email</span>
+          <span className="field-label">Future member email</span>
           <input
             className="field"
             name="accountEmail"
@@ -79,8 +81,8 @@ export function PlayerForm({
             defaultValue={player?.appUserId ? "" : (player?.accountEmail ?? "")}
           />
           <span className="mt-1 block text-xs font-semibold text-slate-500">
-            Optional note for a manual player before their real app account is
-            linked.
+            Optional note only. Send a workspace invite below when this person
+            should sign in and join.
           </span>
         </label>
         <label className="block">
@@ -299,6 +301,11 @@ export function AdminRoleButton({ player }: { player: EditablePlayer }) {
 
 export function DeletePlayerButton({ player }: { player: EditablePlayer }) {
   const [state, action, pending] = useActionState(deletePlayer, initialState);
+  const router = useRouter();
+
+  useEffect(() => {
+    if (state.ok) router.refresh();
+  }, [router, state.ok]);
 
   return (
     <form

@@ -54,6 +54,7 @@ vi.mock("@/lib/auth-admin", async () => {
 import {
   acceptWorkspaceInvite,
   createWorkspaceInvite,
+  deletePlayer,
   linkPlayerAccount,
   savePlayer,
   setPlayerAdminRole,
@@ -183,6 +184,7 @@ describe("RBAC server actions", () => {
     });
     const formData = new FormData();
     formData.set("email", " New.Member@Example.COM ");
+    formData.set("expiresInDays", "7");
 
     const result = await createWorkspaceInvite(
       { ok: false, message: "" },
@@ -201,7 +203,49 @@ describe("RBAC server actions", () => {
       }),
     );
     expect(insert.mock.calls[0][0].token_hash).toMatch(/^[a-f0-9]{64}$/);
+    const expiryMs =
+      new Date(insert.mock.calls[0][0].expires_at).getTime() - Date.now();
+    expect(expiryMs).toBeGreaterThan(6.9 * 24 * 60 * 60 * 1000);
+    expect(expiryMs).toBeLessThan(7.1 * 24 * 60 * 60 * 1000);
     expect(result.inviteUrl).not.toContain(insert.mock.calls[0][0].token_hash);
+  });
+
+  it("lets workspace admins delete unused players", async () => {
+    const deletePlayerRow = vi.fn(() => ({
+      eq: vi.fn(() => ({
+        eq: vi.fn().mockResolvedValue({ error: null }),
+      })),
+    }));
+    supabaseMocks.requireWorkspaceAdminUser.mockResolvedValue({
+      id: "owner-user",
+      email: "owner@example.com",
+      displayName: "Owner",
+      role: "member",
+      activeWorkspaceId: "workspace-1",
+      activeWorkspaceRole: "owner",
+    });
+    supabaseMocks.createServerClient.mockReturnValue({
+      from: vi.fn((table: string) => {
+        if (table === "event_players") {
+          return {
+            select: vi.fn(() => ({
+              eq: vi.fn().mockResolvedValue({ count: 0, error: null }),
+            })),
+          };
+        }
+
+        return {
+          delete: deletePlayerRow,
+        };
+      }),
+    });
+    const formData = new FormData();
+    formData.set("id", "00000000-0000-4000-8000-000000000001");
+
+    const result = await deletePlayer({ ok: false, message: "" }, formData);
+
+    expect(result).toEqual({ ok: true, message: "Player deleted." });
+    expect(deletePlayerRow).toHaveBeenCalled();
   });
 
   it("accepts a pending invite, adds membership, and switches active workspace", async () => {

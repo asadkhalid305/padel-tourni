@@ -1,7 +1,7 @@
 "use client";
 
 import { Copy, Link2, X } from "lucide-react";
-import { useActionState } from "react";
+import { useActionState, useEffect, useState } from "react";
 
 import {
   createWorkspaceInvite,
@@ -23,6 +23,13 @@ export function WorkspaceInviteManager({
     createWorkspaceInvite,
     initialState,
   );
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (!copied) return;
+    const timeout = window.setTimeout(() => setCopied(false), 2500);
+    return () => window.clearTimeout(timeout);
+  }, [copied]);
 
   return (
     <Card>
@@ -50,6 +57,15 @@ export function WorkspaceInviteManager({
             type="email"
             placeholder="optional@example.com"
           />
+        </label>
+        <label className="block">
+          <span className="field-label">Link expires after</span>
+          <select className="field" name="expiresInDays" defaultValue="14">
+            <option value="1">1 day</option>
+            <option value="7">7 days</option>
+            <option value="14">14 days</option>
+            <option value="30">30 days</option>
+          </select>
         </label>
         <Button className="w-full" disabled={createPending}>
           {createPending ? (
@@ -85,14 +101,22 @@ export function WorkspaceInviteManager({
               <Button
                 type="button"
                 variant="ghost"
-                onClick={() =>
-                  navigator.clipboard?.writeText(createState.inviteUrl ?? "")
-                }
+                onClick={async () => {
+                  await navigator.clipboard?.writeText(
+                    createState.inviteUrl ?? "",
+                  );
+                  setCopied(true);
+                }}
                 aria-label="Copy invite link"
               >
                 <Copy size={15} />
               </Button>
             </div>
+            {copied ? (
+              <p className="mt-2 text-xs font-bold text-emerald-800">
+                Link copied.
+              </p>
+            ) : null}
           </div>
         ) : null}
       </form>
