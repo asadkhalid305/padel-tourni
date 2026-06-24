@@ -54,8 +54,10 @@ vi.mock("@/lib/auth-admin", async () => {
 import {
   acceptWorkspaceInvite,
   createWorkspaceInvite,
+  linkPlayerAccount,
   savePlayer,
   setPlayerAdminRole,
+  unlinkPlayerAccount,
 } from "@/app/actions";
 
 describe("RBAC server actions", () => {
@@ -270,5 +272,185 @@ describe("RBAC server actions", () => {
         path: "/",
       },
     );
+  });
+
+  it("links a player only to an account that belongs to the active workspace", async () => {
+    const updatePlayer = vi.fn(() => ({
+      eq: vi.fn(() => ({
+        eq: vi.fn().mockResolvedValue({ error: null }),
+      })),
+    }));
+    const existingLinkFilter = vi.fn(() => ({
+      maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+    }));
+    supabaseMocks.requireWorkspaceAdminUser.mockResolvedValue({
+      id: "owner-user",
+      email: "owner@example.com",
+      displayName: "Owner",
+      role: "member",
+      activeWorkspaceId: "workspace-1",
+      activeWorkspaceRole: "owner",
+    });
+    supabaseMocks.createServerClient.mockReturnValue({
+      from: vi.fn((table: string) => {
+        if (table === "workspace_memberships") {
+          return {
+            select: vi.fn(() => ({
+              eq: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  maybeSingle: vi.fn().mockResolvedValue({
+                    data: { app_user_id: "member-user" },
+                    error: null,
+                  }),
+                })),
+              })),
+            })),
+          };
+        }
+        if (table === "app_users") {
+          return {
+            select: vi.fn(() => ({
+              eq: vi.fn(() => ({
+                single: vi.fn().mockResolvedValue({
+                  data: { email: "member@example.com" },
+                  error: null,
+                }),
+              })),
+            })),
+          };
+        }
+
+        return {
+          select: vi.fn(() => ({
+            eq: vi.fn(() => ({
+              eq: vi.fn(() => ({
+                neq: existingLinkFilter,
+              })),
+            })),
+          })),
+          update: updatePlayer,
+        };
+      }),
+    });
+    const formData = new FormData();
+    formData.set("playerId", "00000000-0000-4000-8000-000000000001");
+    formData.set("appUserId", "00000000-0000-4000-8000-000000000002");
+
+    const result = await linkPlayerAccount(
+      { ok: false, message: "" },
+      formData,
+    );
+
+    expect(result).toEqual({ ok: true, message: "Player account linked." });
+    expect(existingLinkFilter).toHaveBeenCalledWith(
+      "id",
+      "00000000-0000-4000-8000-000000000001",
+    );
+    expect(updatePlayer).toHaveBeenCalledWith({
+      app_user_id: "00000000-0000-4000-8000-000000000002",
+      account_email: "member@example.com",
+    });
+  });
+
+  it("does not link one account to multiple players", async () => {
+    supabaseMocks.requireWorkspaceAdminUser.mockResolvedValue({
+      id: "owner-user",
+      email: "owner@example.com",
+      displayName: "Owner",
+      role: "member",
+      activeWorkspaceId: "workspace-1",
+      activeWorkspaceRole: "owner",
+    });
+    supabaseMocks.createServerClient.mockReturnValue({
+      from: vi.fn((table: string) => {
+        if (table === "workspace_memberships") {
+          return {
+            select: vi.fn(() => ({
+              eq: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  maybeSingle: vi.fn().mockResolvedValue({
+                    data: { app_user_id: "member-user" },
+                    error: null,
+                  }),
+                })),
+              })),
+            })),
+          };
+        }
+        if (table === "app_users") {
+          return {
+            select: vi.fn(() => ({
+              eq: vi.fn(() => ({
+                single: vi.fn().mockResolvedValue({
+                  data: { email: "member@example.com" },
+                  error: null,
+                }),
+              })),
+            })),
+          };
+        }
+
+        return {
+          select: vi.fn(() => ({
+            eq: vi.fn(() => ({
+              eq: vi.fn(() => ({
+                neq: vi.fn(() => ({
+                  maybeSingle: vi.fn().mockResolvedValue({
+                    data: { id: "already-linked-player" },
+                    error: null,
+                  }),
+                })),
+              })),
+            })),
+          })),
+          update: vi.fn(),
+        };
+      }),
+    });
+    const formData = new FormData();
+    formData.set("playerId", "00000000-0000-4000-8000-000000000001");
+    formData.set("appUserId", "00000000-0000-4000-8000-000000000002");
+
+    const result = await linkPlayerAccount(
+      { ok: false, message: "" },
+      formData,
+    );
+
+    expect(result).toEqual({
+      ok: false,
+      message: "This account is already linked to another player.",
+    });
+  });
+
+  it("unlinks a player account inside the active workspace", async () => {
+    const updatePlayer = vi.fn(() => ({
+      eq: vi.fn(() => ({
+        eq: vi.fn().mockResolvedValue({ error: null }),
+      })),
+    }));
+    supabaseMocks.requireWorkspaceAdminUser.mockResolvedValue({
+      id: "owner-user",
+      email: "owner@example.com",
+      displayName: "Owner",
+      role: "member",
+      activeWorkspaceId: "workspace-1",
+      activeWorkspaceRole: "owner",
+    });
+    supabaseMocks.createServerClient.mockReturnValue({
+      from: vi.fn(() => ({ update: updatePlayer })),
+    });
+    const formData = new FormData();
+    formData.set("playerId", "00000000-0000-4000-8000-000000000001");
+
+    const result = await unlinkPlayerAccount(
+      { ok: false, message: "" },
+      formData,
+    );
+
+    expect(result).toEqual({ ok: true, message: "Player account unlinked." });
+    expect(updatePlayer).toHaveBeenCalledWith({
+      app_user_id: null,
+      account_email: null,
+    });
   });
 });

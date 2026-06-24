@@ -13,6 +13,7 @@ import { useState } from "react";
 import {
   AdminRoleButton,
   DeletePlayerButton,
+  PlayerAccountLinkForm,
   PlayerForm,
 } from "@/components/player-form";
 import { Badge, Button, Card } from "@/components/ui";
@@ -45,20 +46,22 @@ export function PlayerManager({
 }) {
   const [editingId, setEditingId] = useState<string>();
   const editingPlayer = players.find((player) => player.id === editingId);
-  const formLinkableUsers =
-    editingPlayer?.appUserId &&
-    editingPlayer.accountEmail &&
-    editingPlayer.accountRole
-      ? [
-          {
-            id: editingPlayer.appUserId,
-            email: editingPlayer.accountEmail,
-            displayName: editingPlayer.accountDisplayName ?? "",
-            role: editingPlayer.accountRole,
-          },
-          ...linkableUsers,
-        ]
-      : linkableUsers;
+
+  function accountOptionsFor(player: Player) {
+    if (!player.appUserId || !player.accountEmail || !player.accountRole) {
+      return linkableUsers;
+    }
+
+    return [
+      {
+        id: player.appUserId,
+        email: player.accountEmail,
+        displayName: player.accountDisplayName ?? "",
+        role: player.accountRole,
+      },
+      ...linkableUsers.filter((user) => user.id !== player.appUserId),
+    ];
+  }
 
   return (
     <div className="grid items-start gap-6 xl:grid-cols-[1fr_340px]">
@@ -128,6 +131,10 @@ export function PlayerManager({
                 </div>
                 {canManage ? (
                   <div className="mt-3 flex flex-wrap items-start justify-end gap-2 border-t border-slate-100 pt-3">
+                    <PlayerAccountLinkForm
+                      player={player}
+                      linkableUsers={accountOptionsFor(player)}
+                    />
                     {canManageRoles && player.appUserId ? (
                       <AdminRoleButton player={player} />
                     ) : null}
@@ -156,7 +163,6 @@ export function PlayerManager({
         <PlayerForm
           key={editingPlayer?.id ?? "new"}
           player={editingPlayer}
-          linkableUsers={formLinkableUsers}
           onCancel={() => setEditingId(undefined)}
         />
       ) : null}

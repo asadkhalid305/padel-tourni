@@ -4,8 +4,10 @@ import { useActionState, useEffect, useRef } from "react";
 
 import {
   deletePlayer,
+  linkPlayerAccount,
   savePlayer,
   setPlayerAdminRole,
+  unlinkPlayerAccount,
   type ActionState,
 } from "@/app/actions";
 import { Button, Card, Spinner } from "@/components/ui";
@@ -27,11 +29,9 @@ type EditablePlayer = {
 
 export function PlayerForm({
   player,
-  linkableUsers,
   onCancel,
 }: {
   player?: EditablePlayer;
-  linkableUsers: LinkableAppUser[];
   onCancel?: () => void;
 }) {
   const [state, action, pending] = useActionState(savePlayer, initialState);
@@ -70,23 +70,7 @@ export function PlayerForm({
           />
         </label>
         <label className="block">
-          <span className="field-label">Linked app account</span>
-          <select
-            className="field"
-            name="appUserId"
-            defaultValue={player?.appUserId ?? ""}
-          >
-            <option value="">No linked account</option>
-            {linkableUsers.map((user) => (
-              <option key={user.id} value={user.id}>
-                {user.displayName ? `${user.displayName} · ` : ""}
-                {user.email} · {roleLabel(user.role)}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="block">
-          <span className="field-label">Pending email</span>
+          <span className="field-label">Pending invite email</span>
           <input
             className="field"
             name="accountEmail"
@@ -94,6 +78,10 @@ export function PlayerForm({
             placeholder="player@example.com"
             defaultValue={player?.appUserId ? "" : (player?.accountEmail ?? "")}
           />
+          <span className="mt-1 block text-xs font-semibold text-slate-500">
+            Optional note for a manual player before their real app account is
+            linked.
+          </span>
         </label>
         <label className="block">
           <span className="field-label">Rating</span>
@@ -157,6 +145,106 @@ export function PlayerForm({
         ) : null}
       </form>
     </Card>
+  );
+}
+
+export function PlayerAccountLinkForm({
+  player,
+  linkableUsers,
+}: {
+  player: EditablePlayer;
+  linkableUsers: LinkableAppUser[];
+}) {
+  const [linkState, linkAction, linkPending] = useActionState(
+    linkPlayerAccount,
+    initialState,
+  );
+  const [unlinkState, unlinkAction, unlinkPending] = useActionState(
+    unlinkPlayerAccount,
+    initialState,
+  );
+  const pending = linkPending || unlinkPending;
+
+  if (!player.appUserId && !linkableUsers.length) {
+    return (
+      <p className="text-xs font-semibold text-slate-500">
+        Invite and accept a workspace member before linking this player.
+      </p>
+    );
+  }
+
+  return (
+    <div className="flex flex-wrap items-start gap-2">
+      <form action={linkAction} className="flex flex-wrap items-start gap-2">
+        <input type="hidden" name="playerId" value={player.id} />
+        <label className="sr-only" htmlFor={`account-${player.id}`}>
+          App account for {player.name}
+        </label>
+        <select
+          id={`account-${player.id}`}
+          name="appUserId"
+          className="field min-h-11 w-64 py-2 text-sm"
+          defaultValue={player.appUserId ?? ""}
+          disabled={pending}
+          required
+        >
+          <option value="" disabled>
+            Connect joined account
+          </option>
+          {linkableUsers.map((user) => (
+            <option key={user.id} value={user.id}>
+              {user.displayName ? `${user.displayName} · ` : ""}
+              {user.email} · {roleLabel(user.role)}
+            </option>
+          ))}
+        </select>
+        <Button type="submit" variant="ghost" disabled={pending}>
+          {linkPending ? (
+            <>
+              <Spinner />
+              Linking...
+            </>
+          ) : (
+            "Link account"
+          )}
+        </Button>
+      </form>
+      {player.appUserId ? (
+        <form action={unlinkAction}>
+          <input type="hidden" name="playerId" value={player.id} />
+          <Button type="submit" variant="ghost" disabled={pending}>
+            {unlinkPending ? (
+              <>
+                <Spinner />
+                Unlinking...
+              </>
+            ) : (
+              "Unlink"
+            )}
+          </Button>
+        </form>
+      ) : null}
+      {linkState.message ? (
+        <p
+          role="status"
+          className={`basis-full text-xs font-semibold ${
+            linkState.ok ? "text-emerald-700" : "text-rose-600"
+          }`}
+        >
+          {linkState.message}
+        </p>
+      ) : null}
+      {unlinkState.message ? (
+        <p
+          role="status"
+          className={`basis-full text-xs font-semibold ${
+            unlinkState.ok ? "text-emerald-700" : "text-rose-600"
+          }`}
+        >
+          {unlinkState.message}
+        </p>
+      ) : null}
+    </div>
   );
 }
 

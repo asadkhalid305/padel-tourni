@@ -52,6 +52,10 @@ const roleChangeSchema = z.object({
   appUserId: z.string().uuid(),
   role: appUserRoleSchema,
 });
+const playerAccountLinkSchema = z.object({
+  playerId: z.string().uuid(),
+  appUserId: z.string().uuid(),
+});
 
 const eventIdSchema = z.string().uuid();
 const inviteTokenSchema = z.string().min(32).max(256);
@@ -293,6 +297,105 @@ export async function setPlayerAdminRole(
     ok: true,
     message: `Role updated to ${parsed.data.role.replace("_", " ")}.`,
   };
+}
+
+export async function linkPlayerAccount(
+  _previous: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const parsed = playerAccountLinkSchema.safeParse({
+    playerId: formData.get("playerId"),
+    appUserId: formData.get("appUserId"),
+  });
+  if (!parsed.success) {
+    return { ok: false, message: "Choose a valid player and account." };
+  }
+
+  const adminUser = await requireWorkspaceAdminAction();
+  if (isActionState(adminUser)) return adminUser;
+
+  const client = createServerClient();
+  if (!client) return unavailable;
+
+  let accountEmail: string | null;
+  try {
+    accountEmail = await getWorkspaceAppUserEmail(
+      client,
+      adminUser.activeWorkspaceId,
+      parsed.data.appUserId,
+    );
+  } catch (error) {
+    return {
+      ok: false,
+      message:
+        error instanceof Error ? error.message : "Unable to verify account.",
+    };
+  }
+  if (!accountEmail) {
+    return {
+      ok: false,
+      message: "Choose an account that belongs to this workspace.",
+    };
+  }
+
+  const { data: existingLink, error: existingLinkError } = await client
+    .from("players")
+    .select("id")
+    .eq("workspace_id", adminUser.activeWorkspaceId)
+    .eq("app_user_id", parsed.data.appUserId)
+    .neq("id", parsed.data.playerId)
+    .maybeSingle();
+  if (existingLinkError) {
+    return { ok: false, message: existingLinkError.message };
+  }
+  if (existingLink) {
+    return {
+      ok: false,
+      message: "This account is already linked to another player.",
+    };
+  }
+
+  const { error } = await client
+    .from("players")
+    .update({
+      app_user_id: parsed.data.appUserId,
+      account_email: accountEmail,
+    })
+    .eq("id", parsed.data.playerId)
+    .eq("workspace_id", adminUser.activeWorkspaceId);
+  if (error) return { ok: false, message: error.message };
+
+  revalidatePath("/players");
+  return { ok: true, message: "Player account linked." };
+}
+
+export async function unlinkPlayerAccount(
+  _previous: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const playerId = z.string().uuid().safeParse(formData.get("playerId"));
+  if (!playerId.success) {
+    return { ok: false, message: "Choose a valid player." };
+  }
+
+  const adminUser = await requireWorkspaceAdminAction();
+  if (isActionState(adminUser)) return adminUser;
+
+  const client = createServerClient();
+  if (!client) return unavailable;
+
+  const { error } = await client
+    .from("players")
+    .update({
+      app_user_id: null,
+      account_email: null,
+    })
+    .eq("id", playerId.data)
+    .eq("workspace_id", adminUser.activeWorkspaceId);
+  if (error) return { ok: false, message: error.message };
+
+  revalidatePath("/players");
+  return { ok: true, message: "Player account unlinked." };
 }
 
 export async function createWorkspaceInvite(
