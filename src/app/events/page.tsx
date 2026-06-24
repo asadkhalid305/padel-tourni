@@ -3,7 +3,8 @@ import Link from "next/link";
 
 import { AccessLimited } from "@/components/access-limited";
 import { Badge, Card, SectionHeading } from "@/components/ui";
-import { canViewPrivateData, listEvents } from "@/lib/data";
+import { WorkspaceEmptyState } from "@/components/workspace-empty-state";
+import { canViewPrivateData, listEvents, listPlayers } from "@/lib/data";
 import { isWorkspaceAdminRole } from "@/lib/roles";
 import { getAuthenticatedUser } from "@/lib/supabase/server";
 import { formatDate } from "@/lib/utils";
@@ -24,7 +25,10 @@ export default async function EventsPage() {
   const workspaceId = user?.activeWorkspaceId;
   if (!workspaceId) return <AccessLimited />;
 
-  const events = await listEvents(workspaceId);
+  const [events, players] = await Promise.all([
+    listEvents(workspaceId),
+    listPlayers(workspaceId),
+  ]);
   const canManage = isWorkspaceAdminRole(user?.activeWorkspaceRole ?? null);
   return (
     <div className="space-y-7">
@@ -43,6 +47,12 @@ export default async function EventsPage() {
           ) : null
         }
       />
+      {!events.length ? (
+        <WorkspaceEmptyState
+          hasPlayers={players.length > 0}
+          canManage={canManage}
+        />
+      ) : null}
       <div className="grid gap-4 lg:grid-cols-2 2xl:grid-cols-3">
         {events.map((event) => (
           <Card key={event.id} className="group">
