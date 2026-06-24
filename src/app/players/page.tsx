@@ -2,10 +2,12 @@ import { AccessLimited } from "@/components/access-limited";
 import { PlayerManager } from "@/components/player-manager";
 import { SectionHeading } from "@/components/ui";
 import { WorkspaceInviteManager } from "@/components/workspace-invite-manager";
+import { WorkspaceMemberManager } from "@/components/workspace-member-manager";
 import {
   canViewPrivateData,
   listLinkableAppUsers,
   listPlayers,
+  listWorkspaceMembers,
   listWorkspaceInvites,
 } from "@/lib/data";
 import { isSuperAdminRole, isWorkspaceAdminRole } from "@/lib/roles";
@@ -23,10 +25,11 @@ export default async function PlayersPage() {
 
   const canManage = isWorkspaceAdminRole(user?.activeWorkspaceRole ?? null);
   const canManageRoles = user ? isSuperAdminRole(user.role) : false;
-  const [players, linkableUsers, invites] = await Promise.all([
+  const [players, linkableUsers, invites, members] = await Promise.all([
     listPlayers(workspaceId),
     canManage ? listLinkableAppUsers(workspaceId) : Promise.resolve([]),
     canManage ? listWorkspaceInvites(workspaceId) : Promise.resolve([]),
+    listWorkspaceMembers(workspaceId),
   ]);
   return (
     <div className="space-y-7">
@@ -40,6 +43,11 @@ export default async function PlayersPage() {
         canManage={canManage}
         canManageRoles={canManageRoles}
         linkableUsers={linkableUsers}
+      />
+      <WorkspaceMemberManager
+        members={members}
+        currentAppUserId={user.id}
+        canManageRoles={canManage}
       />
       {canManage ? <WorkspaceInviteManager invites={invites} /> : null}
     </div>

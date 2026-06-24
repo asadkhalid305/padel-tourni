@@ -15,6 +15,7 @@ import {
   getWorkspaceInvitePreview,
   listEvents,
   listWorkspaceInvites,
+  listWorkspaceMembers,
   listLinkableAppUsers,
   listPlayers,
 } from "@/lib/data";
@@ -258,5 +259,78 @@ describe("workspace-scoped reads", () => {
       "token_hash",
       createHash("sha256").update(token).digest("hex"),
     );
+  });
+
+  it("lists joined workspace members with linked player names", async () => {
+    const workspaceMembershipFilter = vi.fn(() => ({
+      order: vi.fn().mockResolvedValue({
+        data: [
+          {
+            id: "membership-1",
+            app_user_id: "member-user",
+            role: "admin",
+          },
+        ],
+        error: null,
+      }),
+    }));
+    const userFilter = vi.fn(() => ({
+      order: vi.fn().mockResolvedValue({
+        data: [
+          {
+            id: "member-user",
+            email: "member@example.com",
+            display_name: "Member",
+          },
+        ],
+        error: null,
+      }),
+    }));
+    const playerFilter = vi.fn(() => ({
+      in: vi.fn().mockResolvedValue({
+        data: [{ app_user_id: "member-user", name: "Roster Member" }],
+        error: null,
+      }),
+    }));
+    supabaseMocks.createServerClient.mockReturnValue({
+      from: vi.fn((table: string) => {
+        if (table === "workspace_memberships") {
+          return {
+            select: vi.fn(() => ({
+              eq: workspaceMembershipFilter,
+            })),
+          };
+        }
+        if (table === "app_users") {
+          return {
+            select: vi.fn(() => ({
+              in: userFilter,
+            })),
+          };
+        }
+
+        return {
+          select: vi.fn(() => ({
+            eq: playerFilter,
+          })),
+        };
+      }),
+    });
+
+    await expect(listWorkspaceMembers("workspace-1")).resolves.toEqual([
+      {
+        membershipId: "membership-1",
+        appUserId: "member-user",
+        email: "member@example.com",
+        displayName: "Member",
+        role: "admin",
+        linkedPlayerName: "Roster Member",
+      },
+    ]);
+    expect(workspaceMembershipFilter).toHaveBeenCalledWith(
+      "workspace_id",
+      "workspace-1",
+    );
+    expect(userFilter).toHaveBeenCalledWith("id", ["member-user"]);
   });
 });

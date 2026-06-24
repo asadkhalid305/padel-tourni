@@ -19,6 +19,12 @@ export function roleLabel(role: AppUserRole) {
   return role.replace("_", " ");
 }
 
+export function workspaceRoleLabel(role: WorkspaceRole) {
+  if (role === "owner") return "Owner";
+  if (role === "admin") return "Admin";
+  return "Member";
+}
+
 export function isWorkspaceAdminRole(role: WorkspaceRole | null) {
   return role === "owner" || role === "admin";
 }

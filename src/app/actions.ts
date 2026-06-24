@@ -56,6 +56,10 @@ const playerAccountLinkSchema = z.object({
   playerId: z.string().uuid(),
   appUserId: z.string().uuid(),
 });
+const workspaceMemberRoleChangeSchema = z.object({
+  membershipId: z.string().uuid(),
+  role: z.enum(["member", "admin"]),
+});
 
 const eventIdSchema = z.string().uuid();
 const inviteTokenSchema = z.string().min(32).max(256);
@@ -396,6 +400,49 @@ export async function unlinkPlayerAccount(
 
   revalidatePath("/players");
   return { ok: true, message: "Player account unlinked." };
+}
+
+export async function setWorkspaceMemberRole(
+  _previous: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const parsed = workspaceMemberRoleChangeSchema.safeParse({
+    membershipId: formData.get("membershipId"),
+    role: formData.get("role"),
+  });
+  if (!parsed.success) {
+    return { ok: false, message: "Choose a valid member role." };
+  }
+
+  const adminUser = await requireWorkspaceAdminAction();
+  if (isActionState(adminUser)) return adminUser;
+
+  const client = createServerClient();
+  if (!client) return unavailable;
+
+  const { data: membership, error: membershipError } = await client
+    .from("workspace_memberships")
+    .select("id,app_user_id,role")
+    .eq("id", parsed.data.membershipId)
+    .eq("workspace_id", adminUser.activeWorkspaceId)
+    .single();
+  if (membershipError) return { ok: false, message: membershipError.message };
+  if (membership.app_user_id === adminUser.id) {
+    return { ok: false, message: "You cannot change your own workspace role." };
+  }
+  if (membership.role === "owner") {
+    return { ok: false, message: "Workspace owners cannot be changed here." };
+  }
+
+  const { error } = await client
+    .from("workspace_memberships")
+    .update({ role: parsed.data.role })
+    .eq("id", membership.id)
+    .eq("workspace_id", adminUser.activeWorkspaceId);
+  if (error) return { ok: false, message: error.message };
+
+  revalidatePath("/players");
+  return { ok: true, message: "Workspace role updated." };
 }
 
 export async function createWorkspaceInvite(

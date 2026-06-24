@@ -12,7 +12,7 @@ import type {
 } from "@/domain/types";
 import { demoEvent, demoEvents, demoPlayers } from "@/lib/demo-data";
 import { sortCareerRows, type CareerPlayerStats } from "@/lib/career-ranking";
-import type { AppUserRole } from "@/lib/roles";
+import type { AppUserRole, WorkspaceRole } from "@/lib/roles";
 import {
   createServerClient,
   isSupabaseConfigured,
@@ -62,6 +62,15 @@ export type WorkspaceInvitePreview = {
   status: "pending" | "accepted" | "revoked" | "expired" | "missing";
   invitedEmail: string | null;
   expiresAt: string | null;
+};
+
+export type WorkspaceMember = {
+  membershipId: string;
+  appUserId: string;
+  email: string;
+  displayName: string;
+  role: WorkspaceRole;
+  linkedPlayerName: string | null;
 };
 
 type EventSummary = {
@@ -290,6 +299,57 @@ export async function listWorkspaceInvites(
     expiresAt: invite.expires_at,
     createdAt: invite.created_at,
   }));
+}
+
+export async function listWorkspaceMembers(
+  workspaceId?: string | null,
+): Promise<WorkspaceMember[]> {
+  const client = createServerClient();
+  if (!client || !workspaceId) return [];
+
+  const { data: memberships, error: membershipsError } = await client
+    .from("workspace_memberships")
+    .select("id,app_user_id,role")
+    .eq("workspace_id", workspaceId)
+    .order("created_at");
+  if (membershipsError) throw membershipsError;
+  if (!memberships.length) return [];
+
+  const appUserIds = memberships.map((membership) => membership.app_user_id);
+  const [{ data: users, error: usersError }, playersResult] = await Promise.all(
+    [
+      client
+        .from("app_users")
+        .select("id,email,display_name")
+        .in("id", appUserIds)
+        .order("email"),
+      client
+        .from("players")
+        .select("name,app_user_id")
+        .eq("workspace_id", workspaceId)
+        .in("app_user_id", appUserIds),
+    ],
+  );
+  if (usersError) throw usersError;
+  if (playersResult.error) throw playersResult.error;
+
+  const userById = new Map(users.map((user) => [user.id, user]));
+  const playerNameByAppUserId = new Map(
+    playersResult.data.map((player) => [player.app_user_id, player.name]),
+  );
+
+  return memberships.map((membership) => {
+    const user = userById.get(membership.app_user_id);
+    return {
+      membershipId: membership.id,
+      appUserId: membership.app_user_id,
+      email: user?.email ?? "unknown account",
+      displayName: user?.display_name ?? "",
+      role: membership.role,
+      linkedPlayerName:
+        playerNameByAppUserId.get(membership.app_user_id) ?? null,
+    };
+  });
 }
 
 export async function getWorkspaceInvitePreview(

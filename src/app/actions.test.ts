@@ -57,6 +57,7 @@ import {
   linkPlayerAccount,
   savePlayer,
   setPlayerAdminRole,
+  setWorkspaceMemberRole,
   unlinkPlayerAccount,
 } from "@/app/actions";
 
@@ -452,5 +453,114 @@ describe("RBAC server actions", () => {
       app_user_id: null,
       account_email: null,
     });
+  });
+
+  it("lets a workspace admin promote a joined member inside the active workspace", async () => {
+    const updateMembership = vi.fn(() => ({
+      eq: vi.fn(() => ({
+        eq: vi.fn().mockResolvedValue({ error: null }),
+      })),
+    }));
+    supabaseMocks.requireWorkspaceAdminUser.mockResolvedValue({
+      id: "owner-user",
+      email: "owner@example.com",
+      displayName: "Owner",
+      role: "member",
+      activeWorkspaceId: "workspace-1",
+      activeWorkspaceRole: "owner",
+    });
+    supabaseMocks.createServerClient.mockReturnValue({
+      from: vi.fn(() => ({
+        select: vi.fn(() => ({
+          eq: vi.fn(() => ({
+            eq: vi.fn(() => ({
+              single: vi.fn().mockResolvedValue({
+                data: {
+                  id: "00000000-0000-4000-8000-000000000001",
+                  app_user_id: "member-user",
+                  role: "member",
+                },
+                error: null,
+              }),
+            })),
+          })),
+        })),
+        update: updateMembership,
+      })),
+    });
+    const formData = new FormData();
+    formData.set("membershipId", "00000000-0000-4000-8000-000000000001");
+    formData.set("role", "admin");
+
+    const result = await setWorkspaceMemberRole(
+      { ok: false, message: "" },
+      formData,
+    );
+
+    expect(result).toEqual({ ok: true, message: "Workspace role updated." });
+    expect(updateMembership).toHaveBeenCalledWith({ role: "admin" });
+  });
+
+  it("blocks workspace members from changing workspace roles", async () => {
+    supabaseMocks.requireWorkspaceAdminUser.mockResolvedValue(null);
+    const formData = new FormData();
+    formData.set("membershipId", "00000000-0000-4000-8000-000000000001");
+    formData.set("role", "admin");
+
+    const result = await setWorkspaceMemberRole(
+      { ok: false, message: "" },
+      formData,
+    );
+
+    expect(result).toEqual({
+      ok: false,
+      message: "Only admins can make changes.",
+    });
+    expect(supabaseMocks.createServerClient).not.toHaveBeenCalled();
+  });
+
+  it("does not let elevated users change owner memberships", async () => {
+    const updateMembership = vi.fn();
+    supabaseMocks.requireWorkspaceAdminUser.mockResolvedValue({
+      id: "admin-user",
+      email: "admin@example.com",
+      displayName: "Admin",
+      role: "member",
+      activeWorkspaceId: "workspace-1",
+      activeWorkspaceRole: "admin",
+    });
+    supabaseMocks.createServerClient.mockReturnValue({
+      from: vi.fn(() => ({
+        select: vi.fn(() => ({
+          eq: vi.fn(() => ({
+            eq: vi.fn(() => ({
+              single: vi.fn().mockResolvedValue({
+                data: {
+                  id: "00000000-0000-4000-8000-000000000001",
+                  app_user_id: "owner-user",
+                  role: "owner",
+                },
+                error: null,
+              }),
+            })),
+          })),
+        })),
+        update: updateMembership,
+      })),
+    });
+    const formData = new FormData();
+    formData.set("membershipId", "00000000-0000-4000-8000-000000000001");
+    formData.set("role", "member");
+
+    const result = await setWorkspaceMemberRole(
+      { ok: false, message: "" },
+      formData,
+    );
+
+    expect(result).toEqual({
+      ok: false,
+      message: "Workspace owners cannot be changed here.",
+    });
+    expect(updateMembership).not.toHaveBeenCalled();
   });
 });
