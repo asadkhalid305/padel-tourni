@@ -193,10 +193,21 @@ export async function listLinkableAppUsers(
   if (!client) return [];
   if (!workspaceId) return [];
 
+  const { data: memberships, error: membershipsError } = await client
+    .from("workspace_memberships")
+    .select("app_user_id")
+    .eq("workspace_id", workspaceId);
+  if (membershipsError) throw membershipsError;
+  const workspaceAppUserIds = memberships.map(
+    (membership) => membership.app_user_id,
+  );
+  if (!workspaceAppUserIds.length) return [];
+
   const [{ data: users, error: usersError }, linkedResult] = await Promise.all([
     client
       .from("app_users")
       .select("id,email,display_name,role")
+      .in("id", workspaceAppUserIds)
       .order("email"),
     client
       .from("players")

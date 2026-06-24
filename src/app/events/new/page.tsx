@@ -18,14 +18,14 @@ export default async function NewEventPage({
 }: {
   searchParams: Promise<{ error?: string }>;
 }) {
-  const [players, { error }, user] = await Promise.all([
-    getAuthenticatedUser().then((user) => listPlayers(user?.activeWorkspaceId)),
+  const [{ error }, user] = await Promise.all([
     searchParams,
     getAuthenticatedUser(),
   ]);
   if (!user || !isWorkspaceAdminRole(user.activeWorkspaceRole)) {
     redirect("/events");
   }
+  const players = await listPlayers(user.activeWorkspaceId);
   const activePlayers = players.filter((player) => player.isActive);
   const configured = isSupabaseConfigured();
 

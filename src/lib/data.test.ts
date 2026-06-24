@@ -9,7 +9,12 @@ vi.mock("@/lib/supabase/server", () => ({
   isSupabaseConfigured: () => true,
 }));
 
-import { canViewPrivateData, listEvents, listPlayers } from "@/lib/data";
+import {
+  canViewPrivateData,
+  listEvents,
+  listLinkableAppUsers,
+  listPlayers,
+} from "@/lib/data";
 
 describe("private data access", () => {
   beforeEach(() => {
@@ -129,5 +134,60 @@ describe("workspace-scoped reads", () => {
       },
     ]);
     expect(workspaceFilter).toHaveBeenCalledWith("workspace_id", "workspace-1");
+  });
+
+  it("only offers app users who belong to the active workspace", async () => {
+    const appUserIdFilter = vi.fn(() => ({
+      order: vi.fn().mockResolvedValue({
+        data: [
+          {
+            id: "owner-user",
+            email: "owner@example.com",
+            display_name: "Owner",
+            role: "member",
+          },
+        ],
+        error: null,
+      }),
+    }));
+    supabaseMocks.createServerClient.mockReturnValue({
+      from: vi.fn((table: string) => {
+        if (table === "workspace_memberships") {
+          return {
+            select: vi.fn(() => ({
+              eq: vi.fn().mockResolvedValue({
+                data: [{ app_user_id: "owner-user" }],
+                error: null,
+              }),
+            })),
+          };
+        }
+        if (table === "app_users") {
+          return {
+            select: vi.fn(() => ({
+              in: appUserIdFilter,
+            })),
+          };
+        }
+
+        return {
+          select: vi.fn(() => ({
+            eq: vi.fn(() => ({
+              not: vi.fn().mockResolvedValue({ data: [], error: null }),
+            })),
+          })),
+        };
+      }),
+    });
+
+    await expect(listLinkableAppUsers("workspace-1")).resolves.toEqual([
+      {
+        id: "owner-user",
+        email: "owner@example.com",
+        displayName: "Owner",
+        role: "member",
+      },
+    ]);
+    expect(appUserIdFilter).toHaveBeenCalledWith("id", ["owner-user"]);
   });
 });

@@ -135,13 +135,25 @@ export async function savePlayer(
   if (!client) return unavailable;
   let accountEmail = parsed.data.accountEmail;
   if (parsed.data.appUserId) {
-    const { data: appUser, error: appUserError } = await client
-      .from("app_users")
-      .select("email")
-      .eq("id", parsed.data.appUserId)
-      .single();
-    if (appUserError) return { ok: false, message: appUserError.message };
-    accountEmail = appUser.email;
+    try {
+      accountEmail = await getWorkspaceAppUserEmail(
+        client,
+        adminUser.activeWorkspaceId,
+        parsed.data.appUserId,
+      );
+    } catch (error) {
+      return {
+        ok: false,
+        message:
+          error instanceof Error ? error.message : "Unable to verify account.",
+      };
+    }
+    if (!accountEmail) {
+      return {
+        ok: false,
+        message: "Choose an account that belongs to this workspace.",
+      };
+    }
   }
   const payload = {
     workspace_id: adminUser.activeWorkspaceId,
@@ -305,6 +317,30 @@ async function getOrderedSourcePlayers(
     if (!player) throw new Error("Selected player no longer exists.");
     return player;
   });
+}
+
+async function getWorkspaceAppUserEmail(
+  client: ServerClient,
+  workspaceId: string,
+  appUserId: string,
+) {
+  const { data: membership, error: membershipError } = await client
+    .from("workspace_memberships")
+    .select("app_user_id")
+    .eq("workspace_id", workspaceId)
+    .eq("app_user_id", appUserId)
+    .maybeSingle();
+  if (membershipError) throw membershipError;
+  if (!membership) return null;
+
+  const { data: appUser, error: appUserError } = await client
+    .from("app_users")
+    .select("email")
+    .eq("id", appUserId)
+    .single();
+  if (appUserError) throw appUserError;
+
+  return appUser.email;
 }
 
 async function insertEventSchedule(options: {
