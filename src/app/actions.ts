@@ -169,6 +169,13 @@ export async function savePlayer(
   if (!parsed.success) {
     return { ok: false, message: parsed.error.issues[0].message };
   }
+  const roleChange = workspaceMemberRoleChangeSchema.partial().safeParse({
+    membershipId: formData.get("membershipId") || undefined,
+    role: formData.get("workspaceRole") || undefined,
+  });
+  if (!roleChange.success) {
+    return { ok: false, message: "Choose a valid member role." };
+  }
   const adminUser = await requireWorkspaceAdminAction();
   if (isActionState(adminUser)) return adminUser;
 
@@ -248,6 +255,17 @@ export async function savePlayer(
   } else if (result.error) {
     return { ok: false, message: result.error.message };
   }
+
+  if (roleChange.data.membershipId && roleChange.data.role) {
+    const roleResult = await updateWorkspaceMemberRole({
+      client,
+      adminUser,
+      membershipId: roleChange.data.membershipId,
+      role: roleChange.data.role,
+    });
+    if (!roleResult.ok) return roleResult;
+  }
+
   revalidatePath("/players");
   revalidatePath("/");
   return { ok: true, message: "Player saved." };
@@ -445,10 +463,33 @@ export async function setWorkspaceMemberRole(
   const client = createServerClient();
   if (!client) return unavailable;
 
+  const result = await updateWorkspaceMemberRole({
+    client,
+    adminUser,
+    membershipId: parsed.data.membershipId,
+    role: parsed.data.role,
+  });
+  if (!result.ok) return result;
+
+  revalidatePath("/players");
+  return { ok: true, message: "Workspace role updated." };
+}
+
+async function updateWorkspaceMemberRole({
+  client,
+  adminUser,
+  membershipId,
+  role,
+}: {
+  client: ServerClient;
+  adminUser: WorkspaceAdminUser;
+  membershipId: string;
+  role: "member" | "admin";
+}): Promise<ActionState> {
   const { data: membership, error: membershipError } = await client
     .from("workspace_memberships")
     .select("id,app_user_id,role")
-    .eq("id", parsed.data.membershipId)
+    .eq("id", membershipId)
     .eq("workspace_id", adminUser.activeWorkspaceId)
     .single();
   if (membershipError) return { ok: false, message: membershipError.message };
@@ -461,12 +502,11 @@ export async function setWorkspaceMemberRole(
 
   const { error } = await client
     .from("workspace_memberships")
-    .update({ role: parsed.data.role })
+    .update({ role })
     .eq("id", membership.id)
     .eq("workspace_id", adminUser.activeWorkspaceId);
   if (error) return { ok: false, message: error.message };
 
-  revalidatePath("/players");
   return { ok: true, message: "Workspace role updated." };
 }
 

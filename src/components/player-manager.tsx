@@ -39,6 +39,9 @@ export function PlayerManager({
 }) {
   const [editingId, setEditingId] = useState<string>();
   const editingPlayer = players.find((player) => player.id === editingId);
+  const editingMembership = editingPlayer?.appUserId
+    ? members.find((member) => member.appUserId === editingPlayer.appUserId)
+    : undefined;
   const playerByAppUserId = new Map(
     players
       .filter((player) => player.appUserId)
@@ -121,6 +124,9 @@ export function PlayerManager({
         <PlayerForm
           key={editingPlayer?.id ?? "new"}
           player={editingPlayer}
+          membership={editingMembership}
+          canManageRoles={canManageRoles}
+          currentAppUserId={currentAppUserId}
           onCancel={() => setEditingId(undefined)}
         />
       ) : null}

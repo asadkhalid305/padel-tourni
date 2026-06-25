@@ -134,6 +134,109 @@ describe("RBAC server actions", () => {
     expect(insert).not.toHaveBeenCalled();
   });
 
+  it("saves linked player details and workspace role together", async () => {
+    const updatePlayer = vi.fn(() => ({
+      eq: vi.fn(() => ({
+        eq: vi.fn().mockResolvedValue({ error: null }),
+      })),
+    }));
+    const updateMembership = vi.fn(() => ({
+      eq: vi.fn(() => ({
+        eq: vi.fn().mockResolvedValue({ error: null }),
+      })),
+    }));
+    supabaseMocks.requireWorkspaceAdminUser.mockResolvedValue({
+      id: "owner-user",
+      email: "owner@example.com",
+      displayName: "Owner",
+      role: "member",
+      activeWorkspaceId: "workspace-1",
+      activeWorkspaceRole: "owner",
+    });
+    supabaseMocks.createServerClient.mockReturnValue({
+      from: vi.fn((table: string) => {
+        if (table === "workspace_memberships") {
+          return {
+            select: vi.fn((columns: string) => ({
+              eq: vi.fn(() => ({
+                eq: vi.fn(() =>
+                  columns === "app_user_id"
+                    ? {
+                        maybeSingle: vi.fn().mockResolvedValue({
+                          data: { app_user_id: "member-user" },
+                          error: null,
+                        }),
+                      }
+                    : {
+                        single: vi.fn().mockResolvedValue({
+                          data: {
+                            id: "00000000-0000-4000-8000-000000000002",
+                            app_user_id: "member-user",
+                            role: "member",
+                          },
+                          error: null,
+                        }),
+                      },
+                ),
+              })),
+            })),
+            update: updateMembership,
+          };
+        }
+        if (table === "app_users") {
+          return {
+            select: vi.fn(() => ({
+              eq: vi.fn(() => ({
+                single: vi.fn().mockResolvedValue({
+                  data: {
+                    email: "member@example.com",
+                    display_name: "Member User",
+                  },
+                  error: null,
+                }),
+              })),
+            })),
+          };
+        }
+
+        return {
+          select: vi.fn(() => ({
+            eq: vi.fn(() => ({
+              eq: vi.fn(() => ({
+                single: vi.fn().mockResolvedValue({
+                  data: { name: "Member User" },
+                  error: null,
+                }),
+              })),
+            })),
+          })),
+          update: updatePlayer,
+        };
+      }),
+    });
+    const formData = new FormData();
+    formData.set("id", "00000000-0000-4000-8000-000000000001");
+    formData.set("name", "Member User");
+    formData.set("accountEmail", "member@example.com");
+    formData.set("appUserId", "00000000-0000-4000-8000-000000000003");
+    formData.set("rating", "6.5");
+    formData.set("isActive", "true");
+    formData.set("membershipId", "00000000-0000-4000-8000-000000000002");
+    formData.set("workspaceRole", "admin");
+
+    const result = await savePlayer({ ok: false, message: "" }, formData);
+
+    expect(result).toEqual({ ok: true, message: "Player saved." });
+    expect(updatePlayer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        rating: 6.5,
+        is_active: true,
+        app_user_id: "00000000-0000-4000-8000-000000000003",
+      }),
+    );
+    expect(updateMembership).toHaveBeenCalledWith({ role: "admin" });
+  });
+
   it("parses the remove-admin form value as false", async () => {
     supabaseMocks.requireSuperAdminUser.mockResolvedValue({
       id: "super-admin",
