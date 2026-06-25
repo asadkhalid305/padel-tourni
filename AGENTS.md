@@ -32,4 +32,6 @@ export PATH=/bin:/usr/bin:/usr/local/bin:$PATH; source ~/.nvm/nvm.sh && nvm use
 
 The `.nvmrc` value is authoritative; a plain shell may otherwise fall back to the system Node.
 
-Before completion, run only the checks that matter for the change. Typical checks are formatting, linting, targeted type checks, relevant tests, a production build when build output can change, visual inspection for UI work, migration verification for schema changes, and GitHub push verification when publishing.
+GitHub Actions runs the full CI gate for pushes to `main` and pull requests targeting `main`: formatting, linting, type checking, tests, and production build. Treat that workflow as the authoritative full verification layer.
+
+Before completion, run only the local checks that matter for the changed surface. Do not run the full CI suite by default. Typical local checks are a relevant test file, targeted type checking, a production build when build output can change, visual inspection for UI work, migration verification for schema changes, and GitHub push verification when publishing. Run broader local checks only when the change has production, build, schema, or cross-cutting risk, or when pushing directly to `main`.
