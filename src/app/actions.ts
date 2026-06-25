@@ -658,15 +658,17 @@ export async function acceptWorkspaceInvite(
     };
   }
 
-  const { error: updateError } = await client
-    .from("workspace_invites")
-    .update({
-      status: "accepted",
-      accepted_by_app_user_id: user.id,
-      accepted_at: new Date().toISOString(),
-    })
-    .eq("id", invite.id);
-  if (updateError) return { ok: false, message: updateError.message };
+  if (invite.invited_email) {
+    const { error: updateError } = await client
+      .from("workspace_invites")
+      .update({
+        status: "accepted",
+        accepted_by_app_user_id: user.id,
+        accepted_at: new Date().toISOString(),
+      })
+      .eq("id", invite.id);
+    if (updateError) return { ok: false, message: updateError.message };
+  }
 
   const cookieStore = await cookies();
   cookieStore.set(ACTIVE_WORKSPACE_COOKIE, invite.workspace_id, {

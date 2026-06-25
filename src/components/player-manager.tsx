@@ -7,7 +7,6 @@ import { DeletePlayerButton, PlayerForm } from "@/components/player-form";
 import { Badge, Button, Card } from "@/components/ui";
 import {
   RemoveWorkspaceMemberButton,
-  WorkspaceMemberRoleForm,
   WorkspaceRoleBadge,
 } from "@/components/workspace-member-manager";
 import type { WorkspaceMember } from "@/lib/data";
@@ -210,7 +209,7 @@ function MemberPlayerRow({
         <span className="grid size-12 shrink-0 place-items-center rounded-2xl bg-[var(--ink)] text-sm font-black text-white">
           {initials(displayName)}
         </span>
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <p className="truncate font-bold text-[var(--ink)]">{displayName}</p>
           {player ? (
             <div className="mt-1 flex items-center gap-1 text-xs text-slate-500">
@@ -222,7 +221,7 @@ function MemberPlayerRow({
             {member.email}
           </p>
         </div>
-        <div className="ml-auto flex flex-col items-end gap-1">
+        <div className="ml-auto flex shrink-0 items-center gap-2">
           {player ? (
             <Badge tone={player.isActive ? "success" : "neutral"}>
               {player.isActive ? (
@@ -234,41 +233,31 @@ function MemberPlayerRow({
             </Badge>
           ) : null}
           <WorkspaceRoleBadge role={member.role} />
+          {canManage && player && onEdit ? (
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={onEdit}
+              className="size-10 min-h-10 rounded-full px-0"
+              aria-label={`Edit ${displayName}`}
+              title={`Edit ${displayName}`}
+            >
+              <Pencil size={15} />
+            </Button>
+          ) : null}
+          {canManageRoles ? (
+            <RemoveWorkspaceMemberButton
+              member={member}
+              currentAppUserId={currentAppUserId}
+              canManageRoles={canManageRoles}
+            />
+          ) : null}
         </div>
       </div>
-      {canManage ? (
-        <div className="mt-3 flex flex-wrap items-start justify-end gap-2 border-t border-slate-100 pt-3">
-          {player ? (
-            <>
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={onEdit}
-                className="size-10 min-h-10 rounded-full px-0"
-                aria-label={`Edit ${displayName}`}
-                title={`Edit ${displayName}`}
-              >
-                <Pencil size={15} />
-              </Button>
-              <DeletePlayerButton player={player} />
-            </>
-          ) : (
-            <p className="mr-auto text-xs font-semibold text-slate-500">
-              Add a player profile or link this account to an existing player
-              before using them in events.
-            </p>
-          )}
-          <WorkspaceMemberRoleForm
-            member={member}
-            currentAppUserId={currentAppUserId}
-            canManageRoles={canManageRoles}
-          />
-          <RemoveWorkspaceMemberButton
-            member={member}
-            currentAppUserId={currentAppUserId}
-            canManageRoles={canManageRoles}
-          />
-        </div>
+      {canManage && !player ? (
+        <p className="mt-2 text-xs font-semibold text-slate-500">
+          Add a player profile before using this account in events.
+        </p>
       ) : null}
     </div>
   );
@@ -291,7 +280,7 @@ function CustomPlayerRow({
         <span className="grid size-12 shrink-0 place-items-center rounded-2xl bg-[var(--ink)] text-sm font-black text-white">
           {initials(player.name)}
         </span>
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <p className="truncate font-bold text-[var(--ink)]">{player.name}</p>
           <div className="mt-1 flex items-center gap-1 text-xs text-slate-500">
             <Star size={13} className="fill-amber-400 text-amber-400" />
@@ -303,7 +292,7 @@ function CustomPlayerRow({
             </p>
           ) : null}
         </div>
-        <div className="ml-auto flex flex-col items-end gap-1">
+        <div className="ml-auto flex shrink-0 items-center gap-2">
           <Badge tone={player.isActive ? "success" : "neutral"}>
             {player.isActive ? (
               <UserRoundCheck className="mr-1" size={13} />
@@ -317,23 +306,23 @@ function CustomPlayerRow({
           >
             {statusLabel}
           </Badge>
+          {canManage ? (
+            <>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={onEdit}
+                className="size-10 min-h-10 rounded-full px-0"
+                aria-label={`Edit ${player.name}`}
+                title={`Edit ${player.name}`}
+              >
+                <Pencil size={15} />
+              </Button>
+              <DeletePlayerButton player={player} />
+            </>
+          ) : null}
         </div>
       </div>
-      {canManage ? (
-        <div className="mt-3 flex flex-wrap items-start justify-end gap-2 border-t border-slate-100 pt-3">
-          <Button
-            type="button"
-            variant="secondary"
-            onClick={onEdit}
-            className="size-10 min-h-10 rounded-full px-0"
-            aria-label={`Edit ${player.name}`}
-            title={`Edit ${player.name}`}
-          >
-            <Pencil size={15} />
-          </Button>
-          <DeletePlayerButton player={player} />
-        </div>
-      ) : null}
     </div>
   );
 }

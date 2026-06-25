@@ -362,6 +362,100 @@ describe("RBAC server actions", () => {
     );
   });
 
+  it("keeps open invite links reusable after a member accepts", async () => {
+    const upsertMembership = vi.fn().mockResolvedValue({ error: null });
+    const insertPlayer = vi.fn().mockResolvedValue({ error: null });
+    const updateInvite = vi.fn(() => ({
+      eq: vi.fn().mockResolvedValue({ error: null }),
+    }));
+    const cookieSet = vi.fn();
+    supabaseMocks.getAuthenticatedUser.mockResolvedValue({
+      id: "member-user",
+      email: "member@example.com",
+      displayName: "Member",
+      role: "member",
+      activeWorkspaceId: "personal-workspace",
+      activeWorkspaceRole: "owner",
+    });
+    supabaseMocks.createServerClient.mockReturnValue({
+      from: vi.fn((table: string) => {
+        if (table === "workspace_memberships") {
+          return { upsert: upsertMembership };
+        }
+        if (table === "players") {
+          return {
+            select: vi.fn((columns: string) => {
+              if (columns === "id,name,account_email") {
+                return {
+                  eq: vi.fn(() => ({
+                    eq: vi.fn(() => ({
+                      maybeSingle: vi
+                        .fn()
+                        .mockResolvedValue({ data: null, error: null }),
+                    })),
+                  })),
+                };
+              }
+              if (columns === "id") {
+                return {
+                  eq: vi.fn(() => ({
+                    eq: vi.fn(() => ({
+                      maybeSingle: vi
+                        .fn()
+                        .mockResolvedValue({ data: null, error: null }),
+                    })),
+                  })),
+                };
+              }
+
+              return {
+                eq: vi.fn().mockResolvedValue({ data: [], error: null }),
+              };
+            }),
+            insert: insertPlayer,
+          };
+        }
+
+        return {
+          select: vi.fn(() => ({
+            eq: vi.fn(() => ({
+              maybeSingle: vi.fn().mockResolvedValue({
+                data: {
+                  id: "invite-1",
+                  workspace_id: "shared-workspace",
+                  invited_email: null,
+                  status: "pending",
+                  expires_at: "2999-01-01T00:00:00.000Z",
+                },
+                error: null,
+              }),
+            })),
+          })),
+          update: updateInvite,
+        };
+      }),
+    });
+    headerMocks.cookies.mockResolvedValue({ set: cookieSet });
+    const formData = new FormData();
+    formData.set("token", "abcdefghijklmnopqrstuvwxyz1234567890");
+
+    await expect(
+      acceptWorkspaceInvite({ ok: false, message: "" }, formData),
+    ).rejects.toThrow("redirect:/");
+
+    expect(upsertMembership).toHaveBeenCalled();
+    expect(insertPlayer).toHaveBeenCalled();
+    expect(updateInvite).not.toHaveBeenCalled();
+    expect(cookieSet).toHaveBeenCalledWith(
+      "padeltour_active_workspace_id",
+      "shared-workspace",
+      {
+        sameSite: "lax",
+        path: "/",
+      },
+    );
+  });
+
   it("links a player only to an account that belongs to the active workspace", async () => {
     const updatePlayer = vi.fn(() => ({
       eq: vi.fn(() => ({
