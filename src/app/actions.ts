@@ -3,7 +3,7 @@
 import { createHash, randomBytes } from "node:crypto";
 
 import { revalidatePath } from "next/cache";
-import { cookies, headers } from "next/headers";
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 
@@ -28,6 +28,7 @@ import {
   requireWorkspaceAdminUser,
 } from "@/lib/supabase/server";
 import { eventSchema, playerSchema, scoreSchema } from "@/lib/validation";
+import { requestOrigin } from "@/lib/request-origin";
 import { ensureWorkspaceMemberPlayer } from "@/lib/workspaces";
 import type { Database } from "@/types/database";
 
@@ -126,15 +127,6 @@ function isActionState(value: ActionState | object): value is ActionState {
 
 function hashInviteToken(token: string) {
   return createHash("sha256").update(token).digest("hex");
-}
-
-async function requestOrigin() {
-  const headerStore = await headers();
-  return (
-    headerStore.get("origin") ??
-    process.env.NEXT_PUBLIC_APP_ORIGIN ??
-    "http://localhost:3100"
-  );
 }
 
 export async function signOut() {

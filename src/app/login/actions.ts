@@ -1,12 +1,12 @@
 "use server";
 
-import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
 import {
   createAuthClient,
   isSupabaseAuthConfigured,
 } from "@/lib/supabase/server";
+import { requestOrigin } from "@/lib/request-origin";
 
 export async function signInWithGoogle(formData: FormData) {
   if (!isSupabaseAuthConfigured()) {
@@ -19,10 +19,7 @@ export async function signInWithGoogle(formData: FormData) {
   }
 
   const next = String(formData.get("next") ?? "/");
-  const origin =
-    (await headers()).get("origin") ??
-    process.env.NEXT_PUBLIC_APP_ORIGIN ??
-    "http://localhost:3100";
+  const origin = await requestOrigin();
   const { data, error } = await authClient.auth.signInWithOAuth({
     provider: "google",
     options: {
