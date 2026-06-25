@@ -165,20 +165,13 @@ export async function ensureWorkspaceMemberPlayer(
   if (linkedPlayerError) throw linkedPlayerError;
 
   if (linkedPlayer) {
-    const uniqueName = await availablePlayerName(
-      client,
-      workspaceId,
-      name,
-      user.email,
-      linkedPlayer.id,
-    );
     if (
-      linkedPlayer.name !== uniqueName ||
+      linkedPlayer.name !== name ||
       linkedPlayer.account_email !== user.email
     ) {
       const { error } = await client
         .from("players")
-        .update({ name: uniqueName, account_email: user.email })
+        .update({ name, account_email: user.email })
         .eq("id", linkedPlayer.id)
         .eq("workspace_id", workspaceId);
       if (error) throw error;
@@ -195,17 +188,10 @@ export async function ensureWorkspaceMemberPlayer(
   if (emailPlayerError) throw emailPlayerError;
 
   if (emailPlayer) {
-    const uniqueName = await availablePlayerName(
-      client,
-      workspaceId,
-      name,
-      user.email,
-      emailPlayer.id,
-    );
     const { error } = await client
       .from("players")
       .update({
-        name: uniqueName,
+        name,
         account_email: user.email,
         app_user_id: user.id,
       })
@@ -215,28 +201,22 @@ export async function ensureWorkspaceMemberPlayer(
     return;
   }
 
-  const uniqueName = await availablePlayerName(
-    client,
-    workspaceId,
-    name,
-    user.email,
-  );
   const { error } = await client.from("players").insert({
     workspace_id: workspaceId,
-    name: uniqueName,
+    name,
     account_email: user.email,
     app_user_id: user.id,
     rating: 5,
     is_active: true,
   });
   if (isUniqueViolation(error)) {
-    const { error: conflictReadError } = await client
+    const { data: conflictPlayer, error: conflictReadError } = await client
       .from("players")
       .select("id")
       .eq("workspace_id", workspaceId)
       .eq("app_user_id", user.id)
       .maybeSingle();
-    if (!conflictReadError) return;
+    if (!conflictReadError && conflictPlayer) return;
   }
   if (error) throw error;
 }
@@ -268,44 +248,9 @@ export async function ensureWorkspaceMemberPlayers(
   }
 }
 
-async function availablePlayerName(
-  client: SupabaseClient<Database>,
-  workspaceId: string,
-  preferredName: string,
-  email: string,
-  currentPlayerId?: string,
-) {
-  const { data: players, error } = await client
-    .from("players")
-    .select("id,name")
-    .eq("workspace_id", workspaceId);
-  if (error) throw error;
-
-  const taken = new Set(
-    players
-      .filter((player) => player.id !== currentPlayerId)
-      .map((player) => normalizePlayerName(player.name)),
-  );
-  if (!taken.has(normalizePlayerName(preferredName))) return preferredName;
-
-  const [localPart] = email.split("@");
-  const emailName = `${preferredName} (${localPart})`;
-  if (!taken.has(normalizePlayerName(emailName))) return emailName;
-
-  let counter = 2;
-  while (taken.has(normalizePlayerName(`${emailName} ${counter}`))) {
-    counter += 1;
-  }
-  return `${emailName} ${counter}`;
-}
-
 function playerName(user: { displayName: string; email: string }) {
   const displayName = user.displayName.trim();
   return displayName || user.email;
-}
-
-function normalizePlayerName(value: string) {
-  return value.trim().toLowerCase();
 }
 
 function isUniqueViolation(error: { code?: string } | null) {

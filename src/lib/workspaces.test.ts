@@ -168,7 +168,7 @@ describe("workspace foundations", () => {
     ]);
   });
 
-  it("tolerates concurrent linked player creation for a workspace member", async () => {
+  it("tolerates concurrent linked player creation when the member player exists", async () => {
     const insertPlayer = vi.fn().mockResolvedValue({
       error: { code: "23505", message: "duplicate key value" },
     });
@@ -217,6 +217,53 @@ describe("workspace foundations", () => {
     ).resolves.toBeUndefined();
     expect(insertPlayer).toHaveBeenCalled();
     expect(conflictPlayerRead).toHaveBeenCalled();
+  });
+
+  it("does not swallow unique conflicts when the member player is missing", async () => {
+    const insertPlayer = vi.fn().mockResolvedValue({
+      error: { code: "23505", message: "duplicate key value" },
+    });
+    const client = {
+      from: vi.fn(() => ({
+        select: vi.fn((columns: string) => {
+          if (columns === "id,name,account_email") {
+            return {
+              eq: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  maybeSingle: vi
+                    .fn()
+                    .mockResolvedValue({ data: null, error: null }),
+                })),
+              })),
+            };
+          }
+          if (columns === "id") {
+            return {
+              eq: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  maybeSingle: vi
+                    .fn()
+                    .mockResolvedValue({ data: null, error: null }),
+                })),
+              })),
+            };
+          }
+
+          return {
+            eq: vi.fn().mockResolvedValue({ data: [], error: null }),
+          };
+        }),
+        insert: insertPlayer,
+      })),
+    };
+
+    await expect(
+      ensureWorkspaceMemberPlayer(client as never, "workspace-1", {
+        id: "user-1",
+        email: "member@example.com",
+        displayName: "Member",
+      }),
+    ).rejects.toMatchObject({ code: "23505" });
   });
 });
 
