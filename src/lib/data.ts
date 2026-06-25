@@ -17,6 +17,7 @@ import {
   createServerClient,
   isSupabaseConfigured,
 } from "@/lib/supabase/server";
+import { ensureWorkspaceMemberPlayers } from "@/lib/workspaces";
 import type { Database } from "@/types/database";
 
 type PlayerRecord = {
@@ -136,6 +137,8 @@ export async function listPlayers(
   }
   if (!workspaceId) return [];
 
+  await ensureWorkspaceMemberPlayers(client, workspaceId);
+
   const { data, error } = await client
     .from("players")
     .select("id,name,app_user_id,account_email,rating,is_active")
@@ -199,7 +202,7 @@ export async function listPlayers(
       userByEmail.get(player.account_email ?? "");
     return {
       id: player.id,
-      name: player.name,
+      name: linkedUser?.displayName || player.name,
       appUserId: player.app_user_id ?? linkedUser?.id ?? null,
       accountEmail: linkedUser?.email ?? player.account_email,
       accountDisplayName: linkedUser?.displayName ?? null,

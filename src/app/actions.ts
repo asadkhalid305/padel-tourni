@@ -30,6 +30,7 @@ import {
 } from "@/lib/supabase/server";
 import { appUserRoleSchema, setAppUserRole } from "@/lib/auth-admin";
 import { eventSchema, playerSchema, scoreSchema } from "@/lib/validation";
+import { ensureWorkspaceMemberPlayer } from "@/lib/workspaces";
 import type { Database } from "@/types/database";
 
 export type ActionState = {
@@ -174,13 +175,29 @@ export async function savePlayer(
   const client = createServerClient();
   if (!client) return unavailable;
   let accountEmail = parsed.data.accountEmail;
+  let playerName = parsed.data.name;
   if (parsed.data.appUserId) {
     try {
-      accountEmail = await getWorkspaceAppUserEmail(
+      const account = await getWorkspaceAppUser(
         client,
         adminUser.activeWorkspaceId,
         parsed.data.appUserId,
       );
+      accountEmail = account?.email ?? null;
+      playerName = account?.displayName || account?.email || playerName;
+      if (parsed.data.id) {
+        const { data: existingPlayer, error: existingPlayerError } =
+          await client
+            .from("players")
+            .select("name")
+            .eq("id", parsed.data.id)
+            .eq("workspace_id", adminUser.activeWorkspaceId)
+            .single();
+        if (existingPlayerError) {
+          return { ok: false, message: existingPlayerError.message };
+        }
+        playerName = existingPlayer.name;
+      }
     } catch (error) {
       return {
         ok: false,
@@ -197,7 +214,7 @@ export async function savePlayer(
   }
   const payload = {
     workspace_id: adminUser.activeWorkspaceId,
-    name: parsed.data.name,
+    name: playerName,
     app_user_id: parsed.data.appUserId,
     account_email: accountEmail,
     rating: parsed.data.rating,
@@ -330,11 +347,12 @@ export async function linkPlayerAccount(
 
   let accountEmail: string | null;
   try {
-    accountEmail = await getWorkspaceAppUserEmail(
+    const account = await getWorkspaceAppUser(
       client,
       adminUser.activeWorkspaceId,
       parsed.data.appUserId,
     );
+    accountEmail = account?.email ?? null;
   } catch (error) {
     return {
       ok: false,
@@ -628,6 +646,17 @@ export async function acceptWorkspaceInvite(
   if (membershipError) {
     return { ok: false, message: membershipError.message };
   }
+  try {
+    await ensureWorkspaceMemberPlayer(client, invite.workspace_id, user);
+  } catch (error) {
+    return {
+      ok: false,
+      message:
+        error instanceof Error
+          ? error.message
+          : "Unable to create player profile.",
+    };
+  }
 
   const { error: updateError } = await client
     .from("workspace_invites")
@@ -697,7 +726,7 @@ async function getOrderedSourcePlayers(
   });
 }
 
-async function getWorkspaceAppUserEmail(
+async function getWorkspaceAppUser(
   client: ServerClient,
   workspaceId: string,
   appUserId: string,
@@ -713,12 +742,15 @@ async function getWorkspaceAppUserEmail(
 
   const { data: appUser, error: appUserError } = await client
     .from("app_users")
-    .select("email")
+    .select("email,display_name")
     .eq("id", appUserId)
     .single();
   if (appUserError) throw appUserError;
 
-  return appUser.email;
+  return {
+    email: appUser.email,
+    displayName: appUser.display_name,
+  };
 }
 
 async function insertEventSchedule(options: {

@@ -6,6 +6,7 @@ import { ensureDefaultWorkspaceForUser } from "@/lib/workspaces";
 type MockWorkspaceClient = {
   insertWorkspace: ReturnType<typeof vi.fn>;
   insertMembership: ReturnType<typeof vi.fn>;
+  insertPlayer: ReturnType<typeof vi.fn>;
   from: ReturnType<typeof vi.fn>;
 };
 
@@ -105,6 +106,14 @@ describe("workspace foundations", () => {
       app_user_id: "user-1",
       role: "owner",
     });
+    expect(client.insertPlayer).toHaveBeenCalledWith({
+      workspace_id: "workspace-1",
+      name: "Owner",
+      account_email: "owner@example.com",
+      app_user_id: "user-1",
+      rating: 5,
+      is_active: true,
+    });
   });
 });
 
@@ -134,10 +143,12 @@ function mockWorkspaceClient(options?: {
       }),
     })),
   }));
+  const insertPlayer = vi.fn().mockResolvedValue({ error: null });
 
   return {
     insertWorkspace,
     insertMembership,
+    insertPlayer,
     from: vi.fn((table: string) => {
       if (table === "workspace_memberships") {
         const selectMembership = vi.fn(() => {
@@ -165,6 +176,39 @@ function mockWorkspaceClient(options?: {
         return {
           select: selectMembership,
           insert: insertMembership,
+        };
+      }
+      if (table === "players") {
+        return {
+          select: vi.fn((columns: string) => {
+            if (columns === "id,name,account_email") {
+              return {
+                eq: vi.fn(() => ({
+                  eq: vi.fn(() => ({
+                    maybeSingle: vi
+                      .fn()
+                      .mockResolvedValue({ data: null, error: null }),
+                  })),
+                })),
+              };
+            }
+            if (columns === "id") {
+              return {
+                eq: vi.fn(() => ({
+                  eq: vi.fn(() => ({
+                    maybeSingle: vi
+                      .fn()
+                      .mockResolvedValue({ data: null, error: null }),
+                  })),
+                })),
+              };
+            }
+
+            return {
+              eq: vi.fn().mockResolvedValue({ data: [], error: null }),
+            };
+          }),
+          insert: insertPlayer,
         };
       }
 

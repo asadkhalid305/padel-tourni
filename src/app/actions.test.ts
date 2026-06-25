@@ -251,6 +251,7 @@ describe("RBAC server actions", () => {
 
   it("accepts a pending invite, adds membership, and switches active workspace", async () => {
     const upsertMembership = vi.fn().mockResolvedValue({ error: null });
+    const insertPlayer = vi.fn().mockResolvedValue({ error: null });
     const updateInvite = vi.fn(() => ({
       eq: vi.fn().mockResolvedValue({ error: null }),
     }));
@@ -267,6 +268,39 @@ describe("RBAC server actions", () => {
       from: vi.fn((table: string) => {
         if (table === "workspace_memberships") {
           return { upsert: upsertMembership };
+        }
+        if (table === "players") {
+          return {
+            select: vi.fn((columns: string) => {
+              if (columns === "id,name,account_email") {
+                return {
+                  eq: vi.fn(() => ({
+                    eq: vi.fn(() => ({
+                      maybeSingle: vi
+                        .fn()
+                        .mockResolvedValue({ data: null, error: null }),
+                    })),
+                  })),
+                };
+              }
+              if (columns === "id") {
+                return {
+                  eq: vi.fn(() => ({
+                    eq: vi.fn(() => ({
+                      maybeSingle: vi
+                        .fn()
+                        .mockResolvedValue({ data: null, error: null }),
+                    })),
+                  })),
+                };
+              }
+
+              return {
+                eq: vi.fn().mockResolvedValue({ data: [], error: null }),
+              };
+            }),
+            insert: insertPlayer,
+          };
         }
 
         return {
@@ -304,6 +338,14 @@ describe("RBAC server actions", () => {
       },
       { onConflict: "workspace_id,app_user_id", ignoreDuplicates: true },
     );
+    expect(insertPlayer).toHaveBeenCalledWith({
+      workspace_id: "shared-workspace",
+      name: "Member",
+      account_email: "member@example.com",
+      app_user_id: "member-user",
+      rating: 5,
+      is_active: true,
+    });
     expect(updateInvite).toHaveBeenCalledWith(
       expect.objectContaining({
         status: "accepted",

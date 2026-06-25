@@ -1,6 +1,6 @@
 "use client";
 
-import { ShieldCheck, ShieldPlus } from "lucide-react";
+import { Save, ShieldCheck, ShieldPlus, UserMinus } from "lucide-react";
 import { useActionState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 
@@ -56,8 +56,8 @@ export function WorkspaceMemberRoleForm({
   if (!canChangeRole) return null;
 
   return (
-    <div className="basis-full">
-      <form action={action} className="mt-3 flex flex-wrap items-start gap-2">
+    <div>
+      <form action={action} className="flex items-start gap-2">
         <input type="hidden" name="membershipId" value={member.membershipId} />
         <label
           className="sr-only"
@@ -68,22 +68,22 @@ export function WorkspaceMemberRoleForm({
         <select
           id={`workspace-role-${member.membershipId}`}
           name="role"
-          className="field min-h-11 w-40 py-2 text-sm"
+          className="field min-h-10 w-28 py-1.5 text-sm"
           defaultValue={member.role}
           disabled={pending}
         >
           <option value="member">Member</option>
           <option value="admin">Admin</option>
         </select>
-        <Button type="submit" variant="ghost" disabled={pending}>
-          {pending ? (
-            <>
-              <Spinner />
-              Updating...
-            </>
-          ) : (
-            "Update role"
-          )}
+        <Button
+          type="submit"
+          variant="ghost"
+          disabled={pending}
+          className="size-10 min-h-10 rounded-full px-0"
+          aria-label={`Update role for ${member.email}`}
+          title={`Update role for ${member.email}`}
+        >
+          {pending ? <Spinner /> : <Save size={15} />}
         </Button>
       </form>
       {state.message ? (
@@ -139,15 +139,15 @@ export function RemoveWorkspaceMemberButton({
       }}
     >
       <input type="hidden" name="membershipId" value={member.membershipId} />
-      <Button type="submit" variant="danger" disabled={pending}>
-        {pending ? (
-          <>
-            <Spinner />
-            Removing...
-          </>
-        ) : (
-          "Remove"
-        )}
+      <Button
+        type="submit"
+        variant="danger"
+        disabled={pending}
+        className="size-10 min-h-10 rounded-full px-0"
+        aria-label={`Remove ${member.displayName || member.email}`}
+        title={`Remove ${member.displayName || member.email}`}
+      >
+        {pending ? <Spinner /> : <UserMinus size={16} />}
       </Button>
       {state.message ? (
         <p

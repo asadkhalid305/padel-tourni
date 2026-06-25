@@ -78,11 +78,21 @@ describe("workspace-scoped reads", () => {
       })),
     }));
     supabaseMocks.createServerClient.mockReturnValue({
-      from: vi.fn(() => ({
-        select: vi.fn(() => ({
-          eq: workspaceFilter,
-        })),
-      })),
+      from: vi.fn((table: string) => {
+        if (table === "workspace_memberships") {
+          return {
+            select: vi.fn(() => ({
+              eq: vi.fn().mockResolvedValue({ data: [], error: null }),
+            })),
+          };
+        }
+
+        return {
+          select: vi.fn(() => ({
+            eq: workspaceFilter,
+          })),
+        };
+      }),
     });
 
     await expect(listPlayers("workspace-1")).resolves.toEqual([

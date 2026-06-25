@@ -244,10 +244,11 @@ function MemberPlayerRow({
                 type="button"
                 variant="secondary"
                 onClick={onEdit}
+                className="size-10 min-h-10 rounded-full px-0"
                 aria-label={`Edit ${displayName}`}
+                title={`Edit ${displayName}`}
               >
                 <Pencil size={15} />
-                Edit
               </Button>
               <DeletePlayerButton player={player} />
             </>
@@ -324,10 +325,11 @@ function CustomPlayerRow({
             type="button"
             variant="secondary"
             onClick={onEdit}
+            className="size-10 min-h-10 rounded-full px-0"
             aria-label={`Edit ${player.name}`}
+            title={`Edit ${player.name}`}
           >
             <Pencil size={15} />
-            Edit
           </Button>
           <DeletePlayerButton player={player} />
         </div>
