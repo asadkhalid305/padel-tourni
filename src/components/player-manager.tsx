@@ -10,7 +10,6 @@ import {
   WorkspaceRoleBadge,
 } from "@/components/workspace-member-manager";
 import type { WorkspaceMember } from "@/lib/data";
-import type { AppUserRole } from "@/lib/roles";
 import { initials } from "@/lib/utils";
 
 type Player = {
@@ -19,7 +18,6 @@ type Player = {
   appUserId: string | null;
   accountEmail: string | null;
   accountDisplayName: string | null;
-  accountRole: AppUserRole | null;
   rating: number;
   isActive: boolean;
 };

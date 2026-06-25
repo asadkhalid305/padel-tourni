@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 
 import { deletePlayer, savePlayer, type ActionState } from "@/app/actions";
 import { Button, Card, Spinner } from "@/components/ui";
-import type { AppUserRole, WorkspaceRole } from "@/lib/roles";
+import type { WorkspaceRole } from "@/lib/roles";
 
 const initialState: ActionState = { ok: false, message: "" };
 
@@ -16,7 +16,6 @@ type EditablePlayer = {
   appUserId: string | null;
   accountEmail: string | null;
   accountDisplayName: string | null;
-  accountRole: AppUserRole | null;
   rating: number;
   isActive: boolean;
 };

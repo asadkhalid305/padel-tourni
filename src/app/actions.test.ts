@@ -3,12 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const supabaseMocks = vi.hoisted(() => ({
   createServerClient: vi.fn(),
   getAuthenticatedUser: vi.fn(),
-  requireSuperAdminUser: vi.fn(),
   requireWorkspaceAdminUser: vi.fn(),
-}));
-
-const adminMocks = vi.hoisted(() => ({
-  setAppUserRole: vi.fn(),
 }));
 
 const headerMocks = vi.hoisted(() => ({
@@ -36,40 +31,22 @@ vi.mock("@/lib/supabase/server", () => ({
   createAuthClient: vi.fn(),
   createServerClient: supabaseMocks.createServerClient,
   getAuthenticatedUser: supabaseMocks.getAuthenticatedUser,
-  requireSuperAdminUser: supabaseMocks.requireSuperAdminUser,
   requireWorkspaceAdminUser: supabaseMocks.requireWorkspaceAdminUser,
 }));
-
-vi.mock("@/lib/auth-admin", async () => {
-  const actual =
-    await vi.importActual<typeof import("@/lib/auth-admin")>(
-      "@/lib/auth-admin",
-    );
-  return {
-    ...actual,
-    setAppUserRole: adminMocks.setAppUserRole,
-  };
-});
 
 import {
   acceptWorkspaceInvite,
   createWorkspaceInvite,
   deletePlayer,
-  linkPlayerAccount,
   removeWorkspaceMember,
   savePlayer,
-  setPlayerAdminRole,
-  setWorkspaceMemberRole,
-  unlinkPlayerAccount,
 } from "@/app/actions";
 
 describe("RBAC server actions", () => {
   beforeEach(() => {
     supabaseMocks.createServerClient.mockReset();
     supabaseMocks.getAuthenticatedUser.mockReset();
-    supabaseMocks.requireSuperAdminUser.mockReset();
     supabaseMocks.requireWorkspaceAdminUser.mockReset();
-    adminMocks.setAppUserRole.mockReset();
     headerMocks.cookies.mockReset();
     headerMocks.headers.mockReset();
   });
@@ -235,39 +212,6 @@ describe("RBAC server actions", () => {
       }),
     );
     expect(updateMembership).toHaveBeenCalledWith({ role: "admin" });
-  });
-
-  it("parses the remove-admin form value as false", async () => {
-    supabaseMocks.requireSuperAdminUser.mockResolvedValue({
-      id: "super-admin",
-      email: "asadkhalid305@gmail.com",
-      displayName: "Asad",
-      role: "super_admin",
-      activeWorkspaceId: "workspace-1",
-      activeWorkspaceRole: "owner",
-    });
-    adminMocks.setAppUserRole.mockResolvedValue({
-      ok: true,
-      user: {
-        id: "admin-user",
-        email: "organizer@example.com",
-        role: "member",
-      },
-    });
-    const formData = new FormData();
-    formData.set("appUserId", "00000000-0000-4000-8000-000000000001");
-    formData.set("role", "member");
-
-    const result = await setPlayerAdminRole(
-      { ok: false, message: "" },
-      formData,
-    );
-
-    expect(adminMocks.setAppUserRole).toHaveBeenCalledWith(
-      "00000000-0000-4000-8000-000000000001",
-      "member",
-    );
-    expect(result).toEqual({ ok: true, message: "Role updated to member." });
   });
 
   it("creates a workspace invite without storing the raw token", async () => {
@@ -557,295 +501,6 @@ describe("RBAC server actions", () => {
         path: "/",
       },
     );
-  });
-
-  it("links a player only to an account that belongs to the active workspace", async () => {
-    const updatePlayer = vi.fn(() => ({
-      eq: vi.fn(() => ({
-        eq: vi.fn().mockResolvedValue({ error: null }),
-      })),
-    }));
-    const existingLinkFilter = vi.fn(() => ({
-      maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
-    }));
-    supabaseMocks.requireWorkspaceAdminUser.mockResolvedValue({
-      id: "owner-user",
-      email: "owner@example.com",
-      displayName: "Owner",
-      role: "member",
-      activeWorkspaceId: "workspace-1",
-      activeWorkspaceRole: "owner",
-    });
-    supabaseMocks.createServerClient.mockReturnValue({
-      from: vi.fn((table: string) => {
-        if (table === "workspace_memberships") {
-          return {
-            select: vi.fn(() => ({
-              eq: vi.fn(() => ({
-                eq: vi.fn(() => ({
-                  maybeSingle: vi.fn().mockResolvedValue({
-                    data: { app_user_id: "member-user" },
-                    error: null,
-                  }),
-                })),
-              })),
-            })),
-          };
-        }
-        if (table === "app_users") {
-          return {
-            select: vi.fn(() => ({
-              eq: vi.fn(() => ({
-                single: vi.fn().mockResolvedValue({
-                  data: { email: "member@example.com" },
-                  error: null,
-                }),
-              })),
-            })),
-          };
-        }
-
-        return {
-          select: vi.fn(() => ({
-            eq: vi.fn(() => ({
-              eq: vi.fn(() => ({
-                neq: existingLinkFilter,
-              })),
-            })),
-          })),
-          update: updatePlayer,
-        };
-      }),
-    });
-    const formData = new FormData();
-    formData.set("playerId", "00000000-0000-4000-8000-000000000001");
-    formData.set("appUserId", "00000000-0000-4000-8000-000000000002");
-
-    const result = await linkPlayerAccount(
-      { ok: false, message: "" },
-      formData,
-    );
-
-    expect(result).toEqual({ ok: true, message: "Player account linked." });
-    expect(existingLinkFilter).toHaveBeenCalledWith(
-      "id",
-      "00000000-0000-4000-8000-000000000001",
-    );
-    expect(updatePlayer).toHaveBeenCalledWith({
-      app_user_id: "00000000-0000-4000-8000-000000000002",
-      account_email: "member@example.com",
-    });
-  });
-
-  it("does not link one account to multiple players", async () => {
-    supabaseMocks.requireWorkspaceAdminUser.mockResolvedValue({
-      id: "owner-user",
-      email: "owner@example.com",
-      displayName: "Owner",
-      role: "member",
-      activeWorkspaceId: "workspace-1",
-      activeWorkspaceRole: "owner",
-    });
-    supabaseMocks.createServerClient.mockReturnValue({
-      from: vi.fn((table: string) => {
-        if (table === "workspace_memberships") {
-          return {
-            select: vi.fn(() => ({
-              eq: vi.fn(() => ({
-                eq: vi.fn(() => ({
-                  maybeSingle: vi.fn().mockResolvedValue({
-                    data: { app_user_id: "member-user" },
-                    error: null,
-                  }),
-                })),
-              })),
-            })),
-          };
-        }
-        if (table === "app_users") {
-          return {
-            select: vi.fn(() => ({
-              eq: vi.fn(() => ({
-                single: vi.fn().mockResolvedValue({
-                  data: { email: "member@example.com" },
-                  error: null,
-                }),
-              })),
-            })),
-          };
-        }
-
-        return {
-          select: vi.fn(() => ({
-            eq: vi.fn(() => ({
-              eq: vi.fn(() => ({
-                neq: vi.fn(() => ({
-                  maybeSingle: vi.fn().mockResolvedValue({
-                    data: { id: "already-linked-player" },
-                    error: null,
-                  }),
-                })),
-              })),
-            })),
-          })),
-          update: vi.fn(),
-        };
-      }),
-    });
-    const formData = new FormData();
-    formData.set("playerId", "00000000-0000-4000-8000-000000000001");
-    formData.set("appUserId", "00000000-0000-4000-8000-000000000002");
-
-    const result = await linkPlayerAccount(
-      { ok: false, message: "" },
-      formData,
-    );
-
-    expect(result).toEqual({
-      ok: false,
-      message: "This account is already linked to another player.",
-    });
-  });
-
-  it("unlinks a player account inside the active workspace", async () => {
-    const updatePlayer = vi.fn(() => ({
-      eq: vi.fn(() => ({
-        eq: vi.fn().mockResolvedValue({ error: null }),
-      })),
-    }));
-    supabaseMocks.requireWorkspaceAdminUser.mockResolvedValue({
-      id: "owner-user",
-      email: "owner@example.com",
-      displayName: "Owner",
-      role: "member",
-      activeWorkspaceId: "workspace-1",
-      activeWorkspaceRole: "owner",
-    });
-    supabaseMocks.createServerClient.mockReturnValue({
-      from: vi.fn(() => ({ update: updatePlayer })),
-    });
-    const formData = new FormData();
-    formData.set("playerId", "00000000-0000-4000-8000-000000000001");
-
-    const result = await unlinkPlayerAccount(
-      { ok: false, message: "" },
-      formData,
-    );
-
-    expect(result).toEqual({ ok: true, message: "Player account unlinked." });
-    expect(updatePlayer).toHaveBeenCalledWith({
-      app_user_id: null,
-      account_email: null,
-    });
-  });
-
-  it("lets a workspace admin promote a joined member inside the active workspace", async () => {
-    const updateMembership = vi.fn(() => ({
-      eq: vi.fn(() => ({
-        eq: vi.fn().mockResolvedValue({ error: null }),
-      })),
-    }));
-    supabaseMocks.requireWorkspaceAdminUser.mockResolvedValue({
-      id: "owner-user",
-      email: "owner@example.com",
-      displayName: "Owner",
-      role: "member",
-      activeWorkspaceId: "workspace-1",
-      activeWorkspaceRole: "owner",
-    });
-    supabaseMocks.createServerClient.mockReturnValue({
-      from: vi.fn(() => ({
-        select: vi.fn(() => ({
-          eq: vi.fn(() => ({
-            eq: vi.fn(() => ({
-              single: vi.fn().mockResolvedValue({
-                data: {
-                  id: "00000000-0000-4000-8000-000000000001",
-                  app_user_id: "member-user",
-                  role: "member",
-                },
-                error: null,
-              }),
-            })),
-          })),
-        })),
-        update: updateMembership,
-      })),
-    });
-    const formData = new FormData();
-    formData.set("membershipId", "00000000-0000-4000-8000-000000000001");
-    formData.set("role", "admin");
-
-    const result = await setWorkspaceMemberRole(
-      { ok: false, message: "" },
-      formData,
-    );
-
-    expect(result).toEqual({ ok: true, message: "Workspace role updated." });
-    expect(updateMembership).toHaveBeenCalledWith({ role: "admin" });
-  });
-
-  it("blocks workspace members from changing workspace roles", async () => {
-    supabaseMocks.requireWorkspaceAdminUser.mockResolvedValue(null);
-    const formData = new FormData();
-    formData.set("membershipId", "00000000-0000-4000-8000-000000000001");
-    formData.set("role", "admin");
-
-    const result = await setWorkspaceMemberRole(
-      { ok: false, message: "" },
-      formData,
-    );
-
-    expect(result).toEqual({
-      ok: false,
-      message: "Only admins can make changes.",
-    });
-    expect(supabaseMocks.createServerClient).not.toHaveBeenCalled();
-  });
-
-  it("does not let elevated users change owner memberships", async () => {
-    const updateMembership = vi.fn();
-    supabaseMocks.requireWorkspaceAdminUser.mockResolvedValue({
-      id: "admin-user",
-      email: "admin@example.com",
-      displayName: "Admin",
-      role: "member",
-      activeWorkspaceId: "workspace-1",
-      activeWorkspaceRole: "admin",
-    });
-    supabaseMocks.createServerClient.mockReturnValue({
-      from: vi.fn(() => ({
-        select: vi.fn(() => ({
-          eq: vi.fn(() => ({
-            eq: vi.fn(() => ({
-              single: vi.fn().mockResolvedValue({
-                data: {
-                  id: "00000000-0000-4000-8000-000000000001",
-                  app_user_id: "owner-user",
-                  role: "owner",
-                },
-                error: null,
-              }),
-            })),
-          })),
-        })),
-        update: updateMembership,
-      })),
-    });
-    const formData = new FormData();
-    formData.set("membershipId", "00000000-0000-4000-8000-000000000001");
-    formData.set("role", "member");
-
-    const result = await setWorkspaceMemberRole(
-      { ok: false, message: "" },
-      formData,
-    );
-
-    expect(result).toEqual({
-      ok: false,
-      message: "Workspace owners cannot be changed here.",
-    });
-    expect(updateMembership).not.toHaveBeenCalled();
   });
 
   it("lets workspace admins remove non-owner members", async () => {

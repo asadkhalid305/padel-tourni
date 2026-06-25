@@ -26,7 +26,6 @@ type PlayerRecord = {
   appUserId: string | null;
   accountEmail: string | null;
   accountDisplayName: string | null;
-  accountRole: AppUserRole | null;
   rating: number;
   isActive: boolean;
 };
@@ -42,13 +41,6 @@ export type EventFormInitialValues = {
   notes: string;
   playerIds: string[];
   scheduleLocked: boolean;
-};
-
-export type LinkableAppUser = {
-  id: string;
-  email: string;
-  displayName: string;
-  role: AppUserRole;
 };
 
 export type WorkspaceInvite = {
@@ -113,12 +105,6 @@ type PlayerReadRow = Pick<
 > & {
   app_user_id: string | null;
 };
-type PlayerLinkRow = {
-  id: string;
-  app_user_id: string | null;
-  account_email: string | null;
-};
-
 type EventPlayerRow = Database["public"]["Tables"]["event_players"]["Row"];
 
 export async function listPlayers(
@@ -131,7 +117,6 @@ export async function listPlayers(
       appUserId: null,
       accountEmail: null,
       accountDisplayName: null,
-      accountRole: null,
       isActive: true,
     }));
   }
@@ -169,12 +154,18 @@ export async function listPlayers(
   const accountEmails = players
     .map((player) => player.account_email)
     .filter((email): email is string => Boolean(email));
-  const userById = new Map<string, LinkableAppUser>();
-  const userByEmail = new Map<string, LinkableAppUser>();
+  const userById = new Map<
+    string,
+    { id: string; email: string; displayName: string }
+  >();
+  const userByEmail = new Map<
+    string,
+    { id: string; email: string; displayName: string }
+  >();
   if (appUserIds.length || accountEmails.length) {
     const { data: users, error: usersError } = await client
       .from("app_users")
-      .select("id,email,display_name,role")
+      .select("id,email,display_name")
       .or(
         [
           appUserIds.length ? `id.in.(${appUserIds.join(",")})` : null,
@@ -189,7 +180,6 @@ export async function listPlayers(
         id: user.id,
         email: user.email,
         displayName: user.display_name,
-        role: user.role,
       };
       userById.set(user.id, appUser);
       userByEmail.set(user.email, appUser);
@@ -206,80 +196,10 @@ export async function listPlayers(
       appUserId: player.app_user_id ?? linkedUser?.id ?? null,
       accountEmail: linkedUser?.email ?? player.account_email,
       accountDisplayName: linkedUser?.displayName ?? null,
-      accountRole: linkedUser?.role ?? null,
       rating: Number(player.rating),
       isActive: player.is_active,
     };
   });
-}
-
-export async function listLinkableAppUsers(
-  workspaceId?: string | null,
-  currentPlayerId?: string,
-): Promise<LinkableAppUser[]> {
-  const client = createServerClient();
-  if (!client) return [];
-  if (!workspaceId) return [];
-
-  const { data: memberships, error: membershipsError } = await client
-    .from("workspace_memberships")
-    .select("app_user_id")
-    .eq("workspace_id", workspaceId);
-  if (membershipsError) throw membershipsError;
-  const workspaceAppUserIds = memberships.map(
-    (membership) => membership.app_user_id,
-  );
-  if (!workspaceAppUserIds.length) return [];
-
-  const [{ data: users, error: usersError }, linkedResult] = await Promise.all([
-    client
-      .from("app_users")
-      .select("id,email,display_name,role")
-      .in("id", workspaceAppUserIds)
-      .order("email"),
-    client
-      .from("players")
-      .select("id,app_user_id")
-      .eq("workspace_id", workspaceId)
-      .not("app_user_id", "is", null),
-  ]);
-  if (usersError) throw usersError;
-  let linked: PlayerLinkRow[];
-  if (isUndefinedColumnError(linkedResult.error)) {
-    const { data: fallbackLinked, error: fallbackLinkError } = await client
-      .from("players")
-      .select("id,account_email")
-      .eq("workspace_id", workspaceId)
-      .not("account_email", "is", null);
-    if (fallbackLinkError) throw fallbackLinkError;
-    linked = fallbackLinked.map((player) => ({
-      ...player,
-      app_user_id:
-        users.find((user) => user.email === player.account_email)?.id ?? null,
-    }));
-  } else {
-    if (linkedResult.error) throw linkedResult.error;
-    linked = linkedResult.data.map((player) => ({
-      ...player,
-      account_email: null,
-    }));
-  }
-
-  const linkedIds = new Set(
-    linked
-      .filter((player) => player.id !== currentPlayerId)
-      .map((player) => player.app_user_id)
-      .filter((id): id is string => Boolean(id)),
-  );
-
-  return users
-    .filter((user) => !linkedIds.has(user.id))
-    .map((user) => ({
-      id: user.id,
-      email: user.email,
-      displayName: user.display_name,
-      role: user.role,
-    }));
 }
 
 export async function listWorkspaceInvites(

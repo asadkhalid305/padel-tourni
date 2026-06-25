@@ -25,10 +25,8 @@ import {
   createAuthClient,
   createServerClient,
   getAuthenticatedUser,
-  requireSuperAdminUser,
   requireWorkspaceAdminUser,
 } from "@/lib/supabase/server";
-import { appUserRoleSchema, setAppUserRole } from "@/lib/auth-admin";
 import { eventSchema, playerSchema, scoreSchema } from "@/lib/validation";
 import { ensureWorkspaceMemberPlayer } from "@/lib/workspaces";
 import type { Database } from "@/types/database";
@@ -49,14 +47,6 @@ const forbidden: ActionState = {
   message: "Only admins can make changes.",
 };
 
-const roleChangeSchema = z.object({
-  appUserId: z.string().uuid(),
-  role: appUserRoleSchema,
-});
-const playerAccountLinkSchema = z.object({
-  playerId: z.string().uuid(),
-  appUserId: z.string().uuid(),
-});
 const workspaceMemberRoleChangeSchema = z.object({
   membershipId: z.string().uuid(),
   role: z.enum(["member", "admin"]),
@@ -311,168 +301,6 @@ export async function deletePlayer(
   revalidatePath("/");
   revalidatePath("/events/new");
   return { ok: true, message: "Player deleted." };
-}
-
-export async function setPlayerAdminRole(
-  _previous: ActionState,
-  formData: FormData,
-): Promise<ActionState> {
-  const parsed = roleChangeSchema.safeParse({
-    appUserId: formData.get("appUserId"),
-    role: formData.get("role"),
-  });
-  if (!parsed.success) {
-    return { ok: false, message: parsed.error.issues[0].message };
-  }
-
-  const superAdminUser = await requireSuperAdminUser();
-  if (!superAdminUser) {
-    return {
-      ok: false,
-      message: "Only super admins can change account roles.",
-    };
-  }
-
-  const result = await setAppUserRole(parsed.data.appUserId, parsed.data.role);
-  if (!result.ok) {
-    return { ok: false, message: result.message };
-  }
-
-  revalidatePath("/players");
-  return {
-    ok: true,
-    message: `Role updated to ${parsed.data.role.replace("_", " ")}.`,
-  };
-}
-
-export async function linkPlayerAccount(
-  _previous: ActionState,
-  formData: FormData,
-): Promise<ActionState> {
-  const parsed = playerAccountLinkSchema.safeParse({
-    playerId: formData.get("playerId"),
-    appUserId: formData.get("appUserId"),
-  });
-  if (!parsed.success) {
-    return { ok: false, message: "Choose a valid player and account." };
-  }
-
-  const adminUser = await requireWorkspaceAdminAction();
-  if (isActionState(adminUser)) return adminUser;
-
-  const client = createServerClient();
-  if (!client) return unavailable;
-
-  let accountEmail: string | null;
-  try {
-    const account = await getWorkspaceAppUser(
-      client,
-      adminUser.activeWorkspaceId,
-      parsed.data.appUserId,
-    );
-    accountEmail = account?.email ?? null;
-  } catch (error) {
-    return {
-      ok: false,
-      message:
-        error instanceof Error ? error.message : "Unable to verify account.",
-    };
-  }
-  if (!accountEmail) {
-    return {
-      ok: false,
-      message: "Choose an account that belongs to this workspace.",
-    };
-  }
-
-  const { data: existingLink, error: existingLinkError } = await client
-    .from("players")
-    .select("id")
-    .eq("workspace_id", adminUser.activeWorkspaceId)
-    .eq("app_user_id", parsed.data.appUserId)
-    .neq("id", parsed.data.playerId)
-    .maybeSingle();
-  if (existingLinkError) {
-    return { ok: false, message: existingLinkError.message };
-  }
-  if (existingLink) {
-    return {
-      ok: false,
-      message: "This account is already linked to another player.",
-    };
-  }
-
-  const { error } = await client
-    .from("players")
-    .update({
-      app_user_id: parsed.data.appUserId,
-      account_email: accountEmail,
-    })
-    .eq("id", parsed.data.playerId)
-    .eq("workspace_id", adminUser.activeWorkspaceId);
-  if (error) return { ok: false, message: error.message };
-
-  revalidatePath("/players");
-  return { ok: true, message: "Player account linked." };
-}
-
-export async function unlinkPlayerAccount(
-  _previous: ActionState,
-  formData: FormData,
-): Promise<ActionState> {
-  const playerId = z.string().uuid().safeParse(formData.get("playerId"));
-  if (!playerId.success) {
-    return { ok: false, message: "Choose a valid player." };
-  }
-
-  const adminUser = await requireWorkspaceAdminAction();
-  if (isActionState(adminUser)) return adminUser;
-
-  const client = createServerClient();
-  if (!client) return unavailable;
-
-  const { error } = await client
-    .from("players")
-    .update({
-      app_user_id: null,
-      account_email: null,
-    })
-    .eq("id", playerId.data)
-    .eq("workspace_id", adminUser.activeWorkspaceId);
-  if (error) return { ok: false, message: error.message };
-
-  revalidatePath("/players");
-  return { ok: true, message: "Player account unlinked." };
-}
-
-export async function setWorkspaceMemberRole(
-  _previous: ActionState,
-  formData: FormData,
-): Promise<ActionState> {
-  const parsed = workspaceMemberRoleChangeSchema.safeParse({
-    membershipId: formData.get("membershipId"),
-    role: formData.get("role"),
-  });
-  if (!parsed.success) {
-    return { ok: false, message: "Choose a valid member role." };
-  }
-
-  const adminUser = await requireWorkspaceAdminAction();
-  if (isActionState(adminUser)) return adminUser;
-
-  const client = createServerClient();
-  if (!client) return unavailable;
-
-  const result = await updateWorkspaceMemberRole({
-    client,
-    adminUser,
-    membershipId: parsed.data.membershipId,
-    role: parsed.data.role,
-  });
-  if (!result.ok) return result;
-
-  revalidatePath("/players");
-  return { ok: true, message: "Workspace role updated." };
 }
 
 async function updateWorkspaceMemberRole({

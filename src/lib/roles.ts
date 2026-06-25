@@ -15,10 +15,6 @@ export function isSuperAdminRole(role: AppUserRole) {
   return role === "super_admin";
 }
 
-export function roleLabel(role: AppUserRole) {
-  return role.replace("_", " ");
-}
-
 export function workspaceRoleLabel(role: WorkspaceRole) {
   if (role === "owner") return "Owner";
   if (role === "admin") return "Admin";
