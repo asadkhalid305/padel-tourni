@@ -94,7 +94,7 @@ export function PlayerManager({
                   player={player}
                   canManage={canManage}
                   onEdit={() => setEditingId(player.id)}
-                  statusLabel="Account missing"
+                  statusLabel="Not linked"
                 />
               ))}
               {customPlayers.map((player) => (
@@ -278,7 +278,7 @@ function CustomPlayerRow({
   player: Player;
   canManage: boolean;
   onEdit: () => void;
-  statusLabel: "Not linked" | "Account missing";
+  statusLabel: "Not linked";
 }) {
   return (
     <div className="rounded-2xl p-3 transition hover:bg-emerald-50/50">
@@ -307,11 +307,7 @@ function CustomPlayerRow({
             )}
             {player.isActive ? "Active" : "Inactive"}
           </Badge>
-          <Badge
-            tone={statusLabel === "Account missing" ? "warning" : "neutral"}
-          >
-            {statusLabel}
-          </Badge>
+          <Badge tone="neutral">{statusLabel}</Badge>
           {canManage ? (
             <>
               <Button
