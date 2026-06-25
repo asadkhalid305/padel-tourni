@@ -239,7 +239,7 @@ function MemberPlayerRow({
             </Badge>
           ) : null}
           <WorkspaceRoleBadge role={member.role} />
-          {canManage && player && onEdit ? (
+          {canManage && member.role !== "owner" && player && onEdit ? (
             <Button
               type="button"
               variant="secondary"
