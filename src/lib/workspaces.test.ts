@@ -1,7 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { isWorkspaceAdminRole } from "@/lib/roles";
-import { ensureDefaultWorkspaceForUser } from "@/lib/workspaces";
+import {
+  ensureDefaultWorkspaceForUser,
+  ensureWorkspaceMemberPlayer,
+  listUserWorkspaceMemberships,
+} from "@/lib/workspaces";
 
 type MockWorkspaceClient = {
   insertWorkspace: ReturnType<typeof vi.fn>;
@@ -98,7 +102,7 @@ describe("workspace foundations", () => {
     });
 
     expect(client.insertWorkspace).toHaveBeenCalledWith({
-      name: "Owner's workspace",
+      name: "Owner's club",
       personal_owner_app_user_id: "user-1",
     });
     expect(client.insertMembership).toHaveBeenCalledWith({
@@ -114,6 +118,105 @@ describe("workspace foundations", () => {
       rating: 5,
       is_active: true,
     });
+  });
+
+  it("lists the user's workspace memberships with display names", async () => {
+    const membershipUserFilter = vi.fn(() => ({
+      order: vi.fn().mockResolvedValue({
+        data: [
+          { workspace_id: "workspace-1", role: "owner" },
+          { workspace_id: "workspace-2", role: "member" },
+        ],
+        error: null,
+      }),
+    }));
+    const workspaceIdFilter = vi.fn().mockResolvedValue({
+      data: [
+        { id: "workspace-2", name: "Thursday group" },
+        { id: "workspace-1", name: "Owner's workspace" },
+      ],
+      error: null,
+    });
+    const client = {
+      from: vi.fn((table: string) => {
+        if (table === "workspace_memberships") {
+          return {
+            select: vi.fn(() => ({
+              eq: membershipUserFilter,
+            })),
+          };
+        }
+
+        return {
+          select: vi.fn(() => ({
+            in: workspaceIdFilter,
+          })),
+        };
+      }),
+    };
+
+    await expect(
+      listUserWorkspaceMemberships(client as never, "user-1"),
+    ).resolves.toEqual([
+      { workspaceId: "workspace-1", name: "Owner's club", role: "owner" },
+      { workspaceId: "workspace-2", name: "Thursday group", role: "member" },
+    ]);
+    expect(membershipUserFilter).toHaveBeenCalledWith("app_user_id", "user-1");
+    expect(workspaceIdFilter).toHaveBeenCalledWith("id", [
+      "workspace-1",
+      "workspace-2",
+    ]);
+  });
+
+  it("tolerates concurrent linked player creation for a workspace member", async () => {
+    const insertPlayer = vi.fn().mockResolvedValue({
+      error: { code: "23505", message: "duplicate key value" },
+    });
+    const conflictPlayerRead = vi
+      .fn()
+      .mockResolvedValueOnce({ data: null, error: null })
+      .mockResolvedValue({ data: { id: "player-1" }, error: null });
+    const client = {
+      from: vi.fn(() => ({
+        select: vi.fn((columns: string) => {
+          if (columns === "id,name,account_email") {
+            return {
+              eq: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  maybeSingle: vi
+                    .fn()
+                    .mockResolvedValue({ data: null, error: null }),
+                })),
+              })),
+            };
+          }
+          if (columns === "id") {
+            return {
+              eq: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  maybeSingle: conflictPlayerRead,
+                })),
+              })),
+            };
+          }
+
+          return {
+            eq: vi.fn().mockResolvedValue({ data: [], error: null }),
+          };
+        }),
+        insert: insertPlayer,
+      })),
+    };
+
+    await expect(
+      ensureWorkspaceMemberPlayer(client as never, "workspace-1", {
+        id: "user-1",
+        email: "member@example.com",
+        displayName: "Member",
+      }),
+    ).resolves.toBeUndefined();
+    expect(insertPlayer).toHaveBeenCalled();
+    expect(conflictPlayerRead).toHaveBeenCalled();
   });
 });
 

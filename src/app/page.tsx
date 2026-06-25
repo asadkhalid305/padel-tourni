@@ -192,7 +192,7 @@ export default async function DashboardPage() {
               ))
             ) : (
               <p className="rounded-2xl bg-slate-50 p-4 text-sm font-semibold text-slate-500">
-                Events created in this workspace will appear here.
+                Events created in this club will appear here.
               </p>
             )}
           </div>

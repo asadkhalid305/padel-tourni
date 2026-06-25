@@ -39,10 +39,10 @@ export function WorkspaceInviteManager({
         </span>
         <div>
           <h2 className="text-lg font-black text-[var(--ink)]">
-            Invite workspace members
+            Invite club members
           </h2>
           <p className="mt-1 text-sm leading-6 text-slate-500">
-            Create a private link for someone to join this workspace. Email is
+            Create a private link for someone to join this club. Email is
             optional; if provided, only that address can accept.
           </p>
         </div>

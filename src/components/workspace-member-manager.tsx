@@ -62,7 +62,7 @@ export function RemoveWorkspaceMemberButton({
       onSubmit={(event) => {
         if (
           !window.confirm(
-            `Remove ${member.displayName || member.email} from this workspace?`,
+            `Remove ${member.displayName || member.email} from this club?`,
           )
         ) {
           event.preventDefault();

@@ -40,6 +40,7 @@ import {
   deletePlayer,
   removeWorkspaceMember,
   savePlayer,
+  switchActiveWorkspace,
 } from "@/app/actions";
 
 describe("RBAC server actions", () => {
@@ -106,7 +107,7 @@ describe("RBAC server actions", () => {
 
     expect(result).toEqual({
       ok: false,
-      message: "Choose an account that belongs to this workspace.",
+      message: "Choose an account that belongs to this club.",
     });
     expect(insert).not.toHaveBeenCalled();
   });
@@ -294,6 +295,52 @@ describe("RBAC server actions", () => {
 
     expect(result).toEqual({ ok: true, message: "Player deleted." });
     expect(deletePlayerRow).toHaveBeenCalled();
+  });
+
+  it("switches the active workspace only after verifying membership", async () => {
+    const cookieSet = vi.fn();
+    const membershipFilter = vi.fn(() => ({
+      maybeSingle: vi.fn().mockResolvedValue({
+        data: { workspace_id: "00000000-0000-4000-8000-000000000002" },
+        error: null,
+      }),
+    }));
+    supabaseMocks.getAuthenticatedUser.mockResolvedValue({
+      id: "member-user",
+      email: "member@example.com",
+      displayName: "Member",
+      role: "member",
+      activeWorkspaceId: "00000000-0000-4000-8000-000000000001",
+      activeWorkspaceRole: "owner",
+      workspaces: [],
+    });
+    supabaseMocks.createServerClient.mockReturnValue({
+      from: vi.fn(() => ({
+        select: vi.fn(() => ({
+          eq: vi.fn(() => ({
+            eq: membershipFilter,
+          })),
+        })),
+      })),
+    });
+    headerMocks.cookies.mockResolvedValue({ set: cookieSet });
+    const formData = new FormData();
+    formData.set("workspaceId", "00000000-0000-4000-8000-000000000002");
+    formData.set("nextPath", "/players");
+
+    await expect(switchActiveWorkspace(formData)).rejects.toThrow(
+      "redirect:/players",
+    );
+
+    expect(membershipFilter).toHaveBeenCalledWith("app_user_id", "member-user");
+    expect(cookieSet).toHaveBeenCalledWith(
+      "padeltour_active_workspace_id",
+      "00000000-0000-4000-8000-000000000002",
+      {
+        sameSite: "lax",
+        path: "/",
+      },
+    );
   });
 
   it("accepts a pending invite, adds membership, and switches active workspace", async () => {

@@ -15,14 +15,14 @@ export function WorkspaceEmptyState({
       <div className="grid gap-5 lg:grid-cols-[1fr_auto] lg:items-center">
         <div>
           <p className="text-xs font-black uppercase tracking-[0.18em] text-[var(--green)]">
-            Private workspace
+            Private club
           </p>
           <h2 className="mt-2 text-2xl font-black tracking-tight text-[var(--ink)]">
             Start with your own roster.
           </h2>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
-            This workspace is empty and private. Add the players you want to
-            manage, then create an event when the roster is ready.
+            This club is empty and private. Add the players you want to manage,
+            then create an event when the roster is ready.
           </p>
         </div>
         {canManage ? (

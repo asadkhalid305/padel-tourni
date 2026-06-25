@@ -52,6 +52,7 @@ const workspaceMemberRoleChangeSchema = z.object({
   role: z.enum(["member", "admin"]),
 });
 const workspaceMembershipIdSchema = z.string().uuid();
+const workspaceIdSchema = z.string().uuid();
 
 const eventIdSchema = z.string().uuid();
 const inviteTokenSchema = z.string().min(32).max(256);
@@ -144,6 +145,47 @@ export async function signOut() {
   redirect("/login");
 }
 
+export async function switchActiveWorkspace(formData: FormData) {
+  const workspaceId = workspaceIdSchema.safeParse(formData.get("workspaceId"));
+  if (!workspaceId.success) {
+    redirect("/");
+  }
+
+  const user = await getAuthenticatedUser();
+  if (!user) {
+    redirect("/login");
+  }
+
+  const client = createServerClient();
+  if (!client) {
+    redirect("/");
+  }
+
+  const { data: membership, error } = await client
+    .from("workspace_memberships")
+    .select("workspace_id")
+    .eq("workspace_id", workspaceId.data)
+    .eq("app_user_id", user.id)
+    .maybeSingle();
+  if (error || !membership) {
+    redirect("/");
+  }
+
+  const cookieStore = await cookies();
+  cookieStore.set(ACTIVE_WORKSPACE_COOKIE, membership.workspace_id, {
+    sameSite: "lax",
+    path: "/",
+  });
+  revalidatePath("/", "layout");
+  redirect(safeInternalPath(formData.get("nextPath")));
+}
+
+function safeInternalPath(value: FormDataEntryValue | null) {
+  if (typeof value !== "string") return "/";
+  if (!value.startsWith("/") || value.startsWith("//")) return "/";
+  return value;
+}
+
 export async function savePlayer(
   _previous: ActionState,
   formData: FormData,
@@ -205,7 +247,7 @@ export async function savePlayer(
     if (!accountEmail) {
       return {
         ok: false,
-        message: "Choose an account that belongs to this workspace.",
+        message: "Choose an account that belongs to this club.",
       };
     }
   }
@@ -322,10 +364,10 @@ async function updateWorkspaceMemberRole({
     .single();
   if (membershipError) return { ok: false, message: membershipError.message };
   if (membership.app_user_id === adminUser.id) {
-    return { ok: false, message: "You cannot change your own workspace role." };
+    return { ok: false, message: "You cannot change your own club role." };
   }
   if (membership.role === "owner") {
-    return { ok: false, message: "Workspace owners cannot be changed here." };
+    return { ok: false, message: "Club owners cannot be changed here." };
   }
 
   const { error } = await client
@@ -335,7 +377,7 @@ async function updateWorkspaceMemberRole({
     .eq("workspace_id", adminUser.activeWorkspaceId);
   if (error) return { ok: false, message: error.message };
 
-  return { ok: true, message: "Workspace role updated." };
+  return { ok: true, message: "Club role updated." };
 }
 
 export async function removeWorkspaceMember(
@@ -366,7 +408,7 @@ export async function removeWorkspaceMember(
     return { ok: false, message: "You cannot remove yourself." };
   }
   if (membership.role === "owner") {
-    return { ok: false, message: "Workspace owners cannot be removed here." };
+    return { ok: false, message: "Club owners cannot be removed here." };
   }
 
   const { error: unlinkError } = await client
@@ -428,7 +470,8 @@ export async function createWorkspaceInvite(
   revalidatePath("/players");
   return {
     ok: true,
-    message: "Invite link created. Share it with the person you want to add.",
+    message:
+      "Club invite link created. Share it with the person you want to add.",
     inviteUrl,
   };
 }

@@ -119,7 +119,7 @@ export function PlayerForm({
         </label>
         {membership ? (
           <label className="block">
-            <span className="field-label">Workspace role</span>
+            <span className="field-label">Club role</span>
             {canChangeRole ? (
               <>
                 <input

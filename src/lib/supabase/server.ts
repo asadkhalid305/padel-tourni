@@ -12,7 +12,11 @@ import {
   type AppUserRole,
   type WorkspaceRole,
 } from "@/lib/roles";
-import { ensureDefaultWorkspaceForUser } from "@/lib/workspaces";
+import {
+  ensureDefaultWorkspaceForUser,
+  listUserWorkspaceMemberships,
+  type UserWorkspaceMembership,
+} from "@/lib/workspaces";
 import type { Database } from "@/types/database";
 
 export const ACTIVE_WORKSPACE_COOKIE = "padeltour_active_workspace_id";
@@ -78,6 +82,7 @@ export type AuthenticatedAppUser = {
   role: AppUserRole;
   activeWorkspaceId: string | null;
   activeWorkspaceRole: WorkspaceRole | null;
+  workspaces: UserWorkspaceMembership[];
 };
 
 type AppUserAuthRow = Pick<
@@ -161,6 +166,7 @@ export async function ensureAppUser({
     },
     cookieStore.get(ACTIVE_WORKSPACE_COOKIE)?.value,
   );
+  const workspaces = await listUserWorkspaceMemberships(client, promoted.id);
 
   return {
     id: promoted.id,
@@ -169,6 +175,7 @@ export async function ensureAppUser({
     role: promoted.role,
     activeWorkspaceId: membership.workspaceId,
     activeWorkspaceRole: membership.role,
+    workspaces,
   };
 }
 

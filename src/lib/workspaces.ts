@@ -10,6 +10,10 @@ export type WorkspaceMembership = {
   role: WorkspaceRole;
 };
 
+export type UserWorkspaceMembership = WorkspaceMembership & {
+  name: string;
+};
+
 export async function ensureDefaultWorkspaceForUser(
   client: SupabaseClient<Database>,
   user: { id: string; displayName: string; email: string },
@@ -90,12 +94,60 @@ export async function ensureDefaultWorkspaceForUser(
   };
 }
 
+export async function listUserWorkspaceMemberships(
+  client: SupabaseClient<Database>,
+  appUserId: string,
+): Promise<UserWorkspaceMembership[]> {
+  const { data: memberships, error: membershipsError } = await client
+    .from("workspace_memberships")
+    .select("workspace_id,role")
+    .eq("app_user_id", appUserId)
+    .order("created_at");
+  if (membershipsError) throw membershipsError;
+  if (!memberships.length) return [];
+
+  const workspaceIds = memberships.map((membership) => membership.workspace_id);
+  const { data: workspaces, error: workspacesError } = await client
+    .from("workspaces")
+    .select("id,name")
+    .in("id", workspaceIds);
+  if (workspacesError) throw workspacesError;
+
+  const workspaceNameById = new Map(
+    workspaces.map((workspace) => [
+      workspace.id,
+      clubDisplayName(workspace.name),
+    ]),
+  );
+
+  return memberships
+    .map((membership) => {
+      const name = workspaceNameById.get(membership.workspace_id);
+      if (!name) return null;
+
+      return {
+        workspaceId: membership.workspace_id,
+        role: membership.role,
+        name,
+      };
+    })
+    .filter((membership): membership is UserWorkspaceMembership =>
+      Boolean(membership),
+    );
+}
+
 function defaultWorkspaceName(user: { displayName: string; email: string }) {
   const displayName = user.displayName.trim();
-  if (displayName) return `${displayName}'s workspace`;
+  if (displayName) return `${displayName}'s club`;
 
   const [localPart] = user.email.split("@");
-  return `${localPart}'s workspace`;
+  return `${localPart}'s club`;
+}
+
+function clubDisplayName(name: string) {
+  return name.endsWith("'s workspace")
+    ? `${name.slice(0, -"workspace".length)}club`
+    : name;
 }
 
 export async function ensureWorkspaceMemberPlayer(
@@ -177,6 +229,15 @@ export async function ensureWorkspaceMemberPlayer(
     rating: 5,
     is_active: true,
   });
+  if (isUniqueViolation(error)) {
+    const { error: conflictReadError } = await client
+      .from("players")
+      .select("id")
+      .eq("workspace_id", workspaceId)
+      .eq("app_user_id", user.id)
+      .maybeSingle();
+    if (!conflictReadError) return;
+  }
   if (error) throw error;
 }
 
@@ -245,4 +306,8 @@ function playerName(user: { displayName: string; email: string }) {
 
 function normalizePlayerName(value: string) {
   return value.trim().toLowerCase();
+}
+
+function isUniqueViolation(error: { code?: string } | null) {
+  return error?.code === "23505";
 }

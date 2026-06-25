@@ -8,7 +8,7 @@ import { getWorkspaceInvitePreview } from "@/lib/data";
 import { getAuthenticatedUser } from "@/lib/supabase/server";
 import { formatDate } from "@/lib/utils";
 
-export const metadata = { title: "Workspace invite" };
+export const metadata = { title: "Club invite" };
 export const dynamic = "force-dynamic";
 
 export default async function InvitePage({
@@ -39,14 +39,14 @@ export default async function InvitePage({
             tagline
           />
           <p className="mt-8 text-xs font-black uppercase tracking-[0.18em] text-[var(--green)]">
-            Workspace invite
+            Club invite
           </p>
           <h1 className="mt-3 text-3xl font-black tracking-[-0.045em] text-[var(--ink)]">
-            Join a private padel workspace.
+            Join a private padel club.
           </h1>
           <p className="mt-3 text-sm leading-6 text-slate-600">
-            Accepting this invite admits your signed-in account to the
-            workspace. You will only see shared tournament data after joining.
+            Accepting this invite admits your signed-in account to the club. You
+            will only see shared tournament data after joining.
           </p>
 
           {invite.invitedEmail ? (
@@ -72,7 +72,7 @@ export default async function InvitePage({
               <input type="hidden" name="token" value={token} />
               <PendingSubmitButton
                 className="inline-flex min-h-12 w-full items-center justify-center rounded-xl bg-[var(--ink)] px-5 text-sm font-black text-white"
-                pendingLabel="Joining workspace..."
+                pendingLabel="Joining club..."
               >
                 Accept invite
               </PendingSubmitButton>
