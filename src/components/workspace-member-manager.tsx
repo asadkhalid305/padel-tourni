@@ -1,9 +1,14 @@
 "use client";
 
 import { ShieldCheck, ShieldPlus } from "lucide-react";
-import { useActionState } from "react";
+import { useActionState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 
-import { setWorkspaceMemberRole, type ActionState } from "@/app/actions";
+import {
+  removeWorkspaceMember,
+  setWorkspaceMemberRole,
+  type ActionState,
+} from "@/app/actions";
 import { Badge, Button, Spinner } from "@/components/ui";
 import type { WorkspaceMember } from "@/lib/data";
 import { workspaceRoleLabel } from "@/lib/roles";
@@ -92,5 +97,68 @@ export function WorkspaceMemberRoleForm({
         </p>
       ) : null}
     </div>
+  );
+}
+
+export function RemoveWorkspaceMemberButton({
+  member,
+  currentAppUserId,
+  canManageRoles,
+}: {
+  member: WorkspaceMember;
+  currentAppUserId: string;
+  canManageRoles: boolean;
+}) {
+  const [state, action, pending] = useActionState(
+    removeWorkspaceMember,
+    initialState,
+  );
+  const router = useRouter();
+  const canRemove =
+    canManageRoles &&
+    member.role !== "owner" &&
+    member.appUserId !== currentAppUserId;
+
+  useEffect(() => {
+    if (state.ok) router.refresh();
+  }, [router, state.ok]);
+
+  if (!canRemove) return null;
+
+  return (
+    <form
+      action={action}
+      onSubmit={(event) => {
+        if (
+          !window.confirm(
+            `Remove ${member.displayName || member.email} from this workspace?`,
+          )
+        ) {
+          event.preventDefault();
+        }
+      }}
+    >
+      <input type="hidden" name="membershipId" value={member.membershipId} />
+      <Button type="submit" variant="danger" disabled={pending}>
+        {pending ? (
+          <>
+            <Spinner />
+            Removing...
+          </>
+        ) : (
+          "Remove"
+        )}
+      </Button>
+      {state.message ? (
+        <p
+          role="status"
+          className={`mt-2 text-xs font-semibold ${
+            state.ok ? "text-emerald-700" : "text-rose-600"
+          }`}
+        >
+          {state.message}
+        </p>
+      ) : null}
+    </form>
   );
 }

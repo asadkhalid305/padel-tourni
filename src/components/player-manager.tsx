@@ -3,17 +3,14 @@
 import { Pencil, Star, UserRoundCheck, UserRoundX } from "lucide-react";
 import { useState } from "react";
 
-import {
-  DeletePlayerButton,
-  PlayerAccountLinkForm,
-  PlayerForm,
-} from "@/components/player-form";
+import { DeletePlayerButton, PlayerForm } from "@/components/player-form";
 import { Badge, Button, Card } from "@/components/ui";
 import {
+  RemoveWorkspaceMemberButton,
   WorkspaceMemberRoleForm,
   WorkspaceRoleBadge,
 } from "@/components/workspace-member-manager";
-import type { LinkableAppUser, WorkspaceMember } from "@/lib/data";
+import type { WorkspaceMember } from "@/lib/data";
 import type { AppUserRole } from "@/lib/roles";
 import { initials } from "@/lib/utils";
 
@@ -34,14 +31,12 @@ export function PlayerManager({
   canManage,
   canManageRoles,
   currentAppUserId,
-  linkableUsers,
 }: {
   players: Player[];
   members: WorkspaceMember[];
   canManage: boolean;
   canManageRoles: boolean;
   currentAppUserId: string;
-  linkableUsers: LinkableAppUser[];
 }) {
   const [editingId, setEditingId] = useState<string>();
   const editingPlayer = players.find((player) => player.id === editingId);
@@ -65,27 +60,19 @@ export function PlayerManager({
   );
   const hasRows =
     memberRows.length || customPlayers.length || orphanedLinkedPlayers.length;
-
-  function accountOptionsFor(player: Player) {
-    if (!player.appUserId || !player.accountEmail || !player.accountRole) {
-      return linkableUsers;
-    }
-
-    return [
-      {
-        id: player.appUserId,
-        email: player.accountEmail,
-        displayName: player.accountDisplayName ?? "",
-        role: player.accountRole,
-      },
-      ...linkableUsers.filter((user) => user.id !== player.appUserId),
-    ];
-  }
+  const duplicateWarnings = findDuplicateWarnings(customPlayers, members);
 
   return (
     <div className="grid items-start gap-6 xl:grid-cols-[1fr_340px]">
       <Card className="p-2 sm:p-3">
         <div className="grid gap-2">
+          {duplicateWarnings.length ? (
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-semibold leading-6 text-amber-900">
+              {duplicateWarnings.map((warning) => (
+                <p key={warning}>{warning}</p>
+              ))}
+            </div>
+          ) : null}
           {hasRows ? (
             <>
               {memberRows.map(({ member, player }) => (
@@ -104,7 +91,6 @@ export function PlayerManager({
                   key={player.id}
                   player={player}
                   canManage={canManage}
-                  linkableUsers={accountOptionsFor(player)}
                   onEdit={() => setEditingId(player.id)}
                   statusLabel="Account missing"
                 />
@@ -114,7 +100,6 @@ export function PlayerManager({
                   key={player.id}
                   player={player}
                   canManage={canManage}
-                  linkableUsers={accountOptionsFor(player)}
                   onEdit={() => setEditingId(player.id)}
                   statusLabel="Not linked"
                 />
@@ -153,6 +138,53 @@ function compareMembers(first: WorkspaceMember, second: WorkspaceMember) {
   return (first.displayName || first.email).localeCompare(
     second.displayName || second.email,
   );
+}
+
+function findDuplicateWarnings(players: Player[], members: WorkspaceMember[]) {
+  const warnings = new Set<string>();
+  const memberByEmail = new Map(
+    members.map((member) => [member.email.toLowerCase(), member]),
+  );
+  const memberNames = members.map((member) => ({
+    ...member,
+    normalizedName: normalizeName(member.displayName || member.email),
+  }));
+
+  players.forEach((player) => {
+    const matchingEmail = player.accountEmail
+      ? memberByEmail.get(player.accountEmail.toLowerCase())
+      : null;
+    if (matchingEmail) {
+      warnings.add(
+        `${player.name} has the same email as ${matchingEmail.displayName || matchingEmail.email}. Delete the duplicate custom player if they are the same person.`,
+      );
+      return;
+    }
+
+    const normalizedPlayerName = normalizeName(player.name);
+    const similarMember = memberNames.find(
+      (member) =>
+        normalizedPlayerName &&
+        member.normalizedName &&
+        (normalizedPlayerName === member.normalizedName ||
+          normalizedPlayerName.includes(member.normalizedName) ||
+          member.normalizedName.includes(normalizedPlayerName)),
+    );
+    if (similarMember) {
+      warnings.add(
+        `${player.name} looks similar to ${similarMember.displayName || similarMember.email}. Check whether the custom player is still needed.`,
+      );
+    }
+  });
+
+  return [...warnings];
+}
+
+function normalizeName(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ");
 }
 
 function MemberPlayerRow({
@@ -230,6 +262,11 @@ function MemberPlayerRow({
             currentAppUserId={currentAppUserId}
             canManageRoles={canManageRoles}
           />
+          <RemoveWorkspaceMemberButton
+            member={member}
+            currentAppUserId={currentAppUserId}
+            canManageRoles={canManageRoles}
+          />
         </div>
       ) : null}
     </div>
@@ -239,13 +276,11 @@ function MemberPlayerRow({
 function CustomPlayerRow({
   player,
   canManage,
-  linkableUsers,
   onEdit,
   statusLabel,
 }: {
   player: Player;
   canManage: boolean;
-  linkableUsers: LinkableAppUser[];
   onEdit: () => void;
   statusLabel: "Not linked" | "Account missing";
 }) {
@@ -285,10 +320,6 @@ function CustomPlayerRow({
       </div>
       {canManage ? (
         <div className="mt-3 flex flex-wrap items-start justify-end gap-2 border-t border-slate-100 pt-3">
-          <PlayerAccountLinkForm
-            player={player}
-            linkableUsers={linkableUsers}
-          />
           <Button
             type="button"
             variant="secondary"

@@ -60,6 +60,7 @@ const workspaceMemberRoleChangeSchema = z.object({
   membershipId: z.string().uuid(),
   role: z.enum(["member", "admin"]),
 });
+const workspaceMembershipIdSchema = z.string().uuid();
 
 const eventIdSchema = z.string().uuid();
 const inviteTokenSchema = z.string().min(32).max(256);
@@ -449,6 +450,55 @@ export async function setWorkspaceMemberRole(
 
   revalidatePath("/players");
   return { ok: true, message: "Workspace role updated." };
+}
+
+export async function removeWorkspaceMember(
+  _previous: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const membershipId = workspaceMembershipIdSchema.safeParse(
+    formData.get("membershipId"),
+  );
+  if (!membershipId.success) {
+    return { ok: false, message: "Choose a valid member." };
+  }
+
+  const adminUser = await requireWorkspaceAdminAction();
+  if (isActionState(adminUser)) return adminUser;
+
+  const client = createServerClient();
+  if (!client) return unavailable;
+
+  const { data: membership, error: membershipError } = await client
+    .from("workspace_memberships")
+    .select("id,app_user_id,role")
+    .eq("id", membershipId.data)
+    .eq("workspace_id", adminUser.activeWorkspaceId)
+    .single();
+  if (membershipError) return { ok: false, message: membershipError.message };
+  if (membership.app_user_id === adminUser.id) {
+    return { ok: false, message: "You cannot remove yourself." };
+  }
+  if (membership.role === "owner") {
+    return { ok: false, message: "Workspace owners cannot be removed here." };
+  }
+
+  const { error: unlinkError } = await client
+    .from("players")
+    .update({ app_user_id: null })
+    .eq("workspace_id", adminUser.activeWorkspaceId)
+    .eq("app_user_id", membership.app_user_id);
+  if (unlinkError) return { ok: false, message: unlinkError.message };
+
+  const { error } = await client
+    .from("workspace_memberships")
+    .delete()
+    .eq("id", membership.id)
+    .eq("workspace_id", adminUser.activeWorkspaceId);
+  if (error) return { ok: false, message: error.message };
+
+  revalidatePath("/players");
+  return { ok: true, message: "Member removed." };
 }
 
 export async function createWorkspaceInvite(

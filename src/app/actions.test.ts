@@ -56,6 +56,7 @@ import {
   createWorkspaceInvite,
   deletePlayer,
   linkPlayerAccount,
+  removeWorkspaceMember,
   savePlayer,
   setPlayerAdminRole,
   setWorkspaceMemberRole,
@@ -606,5 +607,109 @@ describe("RBAC server actions", () => {
       message: "Workspace owners cannot be changed here.",
     });
     expect(updateMembership).not.toHaveBeenCalled();
+  });
+
+  it("lets workspace admins remove non-owner members", async () => {
+    const deleteMembership = vi.fn(() => ({
+      eq: vi.fn(() => ({
+        eq: vi.fn().mockResolvedValue({ error: null }),
+      })),
+    }));
+    const unlinkPlayers = vi.fn(() => ({
+      eq: vi.fn(() => ({
+        eq: vi.fn().mockResolvedValue({ error: null }),
+      })),
+    }));
+    supabaseMocks.requireWorkspaceAdminUser.mockResolvedValue({
+      id: "owner-user",
+      email: "owner@example.com",
+      displayName: "Owner",
+      role: "member",
+      activeWorkspaceId: "workspace-1",
+      activeWorkspaceRole: "owner",
+    });
+    const from = vi.fn((table: string) => {
+      if (table === "players") {
+        return {
+          update: unlinkPlayers,
+        };
+      }
+
+      return {
+        select: vi.fn(() => ({
+          eq: vi.fn(() => ({
+            eq: vi.fn(() => ({
+              single: vi.fn().mockResolvedValue({
+                data: {
+                  id: "00000000-0000-4000-8000-000000000001",
+                  app_user_id: "member-user",
+                  role: "member",
+                },
+                error: null,
+              }),
+            })),
+          })),
+        })),
+        delete: deleteMembership,
+      };
+    });
+    supabaseMocks.createServerClient.mockReturnValue({
+      from,
+    });
+    const formData = new FormData();
+    formData.set("membershipId", "00000000-0000-4000-8000-000000000001");
+
+    const result = await removeWorkspaceMember(
+      { ok: false, message: "" },
+      formData,
+    );
+
+    expect(result).toEqual({ ok: true, message: "Member removed." });
+    expect(unlinkPlayers).toHaveBeenCalledWith({ app_user_id: null });
+    expect(deleteMembership).toHaveBeenCalled();
+  });
+
+  it("does not let elevated users remove owners or themselves", async () => {
+    const deleteMembership = vi.fn();
+    supabaseMocks.requireWorkspaceAdminUser.mockResolvedValue({
+      id: "admin-user",
+      email: "admin@example.com",
+      displayName: "Admin",
+      role: "member",
+      activeWorkspaceId: "workspace-1",
+      activeWorkspaceRole: "admin",
+    });
+    supabaseMocks.createServerClient.mockReturnValue({
+      from: vi.fn(() => ({
+        select: vi.fn(() => ({
+          eq: vi.fn(() => ({
+            eq: vi.fn(() => ({
+              single: vi.fn().mockResolvedValue({
+                data: {
+                  id: "00000000-0000-4000-8000-000000000001",
+                  app_user_id: "admin-user",
+                  role: "admin",
+                },
+                error: null,
+              }),
+            })),
+          })),
+        })),
+        delete: deleteMembership,
+      })),
+    });
+    const formData = new FormData();
+    formData.set("membershipId", "00000000-0000-4000-8000-000000000001");
+
+    const result = await removeWorkspaceMember(
+      { ok: false, message: "" },
+      formData,
+    );
+
+    expect(result).toEqual({
+      ok: false,
+      message: "You cannot remove yourself.",
+    });
+    expect(deleteMembership).not.toHaveBeenCalled();
   });
 });

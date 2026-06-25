@@ -4,7 +4,6 @@ import { SectionHeading } from "@/components/ui";
 import { WorkspaceInviteManager } from "@/components/workspace-invite-manager";
 import {
   canViewPrivateData,
-  listLinkableAppUsers,
   listPlayers,
   listWorkspaceMembers,
   listWorkspaceInvites,
@@ -23,9 +22,8 @@ export default async function PlayersPage() {
   if (!workspaceId) return <AccessLimited />;
 
   const canManage = isWorkspaceAdminRole(user?.activeWorkspaceRole ?? null);
-  const [players, linkableUsers, invites, members] = await Promise.all([
+  const [players, invites, members] = await Promise.all([
     listPlayers(workspaceId),
-    canManage ? listLinkableAppUsers(workspaceId) : Promise.resolve([]),
     canManage ? listWorkspaceInvites(workspaceId) : Promise.resolve([]),
     listWorkspaceMembers(workspaceId),
   ]);
@@ -42,7 +40,6 @@ export default async function PlayersPage() {
         canManage={canManage}
         canManageRoles={canManage}
         currentAppUserId={user.id}
-        linkableUsers={linkableUsers}
       />
       {canManage ? <WorkspaceInviteManager invites={invites} /> : null}
     </div>
