@@ -1,16 +1,12 @@
 "use client";
 
+import { Trash2 } from "lucide-react";
 import { useActionState, useEffect, useRef } from "react";
+import { useRouter } from "next/navigation";
 
-import {
-  deletePlayer,
-  savePlayer,
-  setPlayerAdminRole,
-  type ActionState,
-} from "@/app/actions";
+import { deletePlayer, savePlayer, type ActionState } from "@/app/actions";
 import { Button, Card, Spinner } from "@/components/ui";
-import type { LinkableAppUser } from "@/lib/data";
-import { roleLabel, type AppUserRole } from "@/lib/roles";
+import type { WorkspaceRole } from "@/lib/roles";
 
 const initialState: ActionState = { ok: false, message: "" };
 
@@ -20,22 +16,35 @@ type EditablePlayer = {
   appUserId: string | null;
   accountEmail: string | null;
   accountDisplayName: string | null;
-  accountRole: AppUserRole | null;
   rating: number;
   isActive: boolean;
 };
 
 export function PlayerForm({
   player,
-  linkableUsers,
+  membership,
+  canManageRoles = false,
+  currentAppUserId,
   onCancel,
 }: {
   player?: EditablePlayer;
-  linkableUsers: LinkableAppUser[];
+  membership?: {
+    membershipId: string;
+    appUserId: string;
+    role: WorkspaceRole;
+  };
+  canManageRoles?: boolean;
+  currentAppUserId?: string;
   onCancel?: () => void;
 }) {
   const [state, action, pending] = useActionState(savePlayer, initialState);
   const formRef = useRef<HTMLFormElement>(null);
+  const isLinkedPlayer = Boolean(player?.appUserId);
+  const canChangeRole =
+    Boolean(membership) &&
+    canManageRoles &&
+    membership?.role !== "owner" &&
+    membership?.appUserId !== currentAppUserId;
   useEffect(() => {
     if (!state.ok) return;
     formRef.current?.reset();
@@ -48,7 +57,8 @@ export function PlayerForm({
         {player ? "Edit player" : "Add a player"}
       </h2>
       <p className="mt-1 text-sm text-slate-500">
-        Ratings run from 1 to 10 and help balance teams.
+        Players can be used in events immediately. Joined members use their
+        account name and email; admins manage rating and active state here.
       </p>
       <form
         key={player?.id ?? "new"}
@@ -57,6 +67,9 @@ export function PlayerForm({
         className="mt-5 space-y-4"
       >
         {player ? <input type="hidden" name="id" value={player.id} /> : null}
+        {player?.appUserId ? (
+          <input type="hidden" name="appUserId" value={player.appUserId} />
+        ) : null}
         {!player ? <input type="hidden" name="isActive" value="true" /> : null}
         <label className="block">
           <span className="field-label">Name</span>
@@ -67,33 +80,29 @@ export function PlayerForm({
             required
             minLength={2}
             defaultValue={player?.name}
+            readOnly={isLinkedPlayer}
           />
+          {isLinkedPlayer ? (
+            <span className="mt-1 block text-xs font-semibold text-slate-500">
+              Name is read from the signed-in account.
+            </span>
+          ) : null}
         </label>
         <label className="block">
-          <span className="field-label">Linked app account</span>
-          <select
-            className="field"
-            name="appUserId"
-            defaultValue={player?.appUserId ?? ""}
-          >
-            <option value="">No linked account</option>
-            {linkableUsers.map((user) => (
-              <option key={user.id} value={user.id}>
-                {user.displayName ? `${user.displayName} · ` : ""}
-                {user.email} · {roleLabel(user.role)}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="block">
-          <span className="field-label">Pending email</span>
+          <span className="field-label">Email</span>
           <input
             className="field"
             name="accountEmail"
             type="email"
             placeholder="player@example.com"
-            defaultValue={player?.appUserId ? "" : (player?.accountEmail ?? "")}
+            defaultValue={player?.accountEmail ?? ""}
+            readOnly={isLinkedPlayer}
           />
+          <span className="mt-1 block text-xs font-semibold text-slate-500">
+            {isLinkedPlayer
+              ? "Email is read from the signed-in account."
+              : "Optional. This is only a note until the player joins with an account."}
+          </span>
         </label>
         <label className="block">
           <span className="field-label">Rating</span>
@@ -108,6 +117,39 @@ export function PlayerForm({
             required
           />
         </label>
+        {membership ? (
+          <label className="block">
+            <span className="field-label">Club role</span>
+            {canChangeRole ? (
+              <>
+                <input
+                  type="hidden"
+                  name="membershipId"
+                  value={membership.membershipId}
+                />
+                <select
+                  className="field"
+                  name="workspaceRole"
+                  defaultValue={membership.role}
+                >
+                  <option value="member">Member</option>
+                  <option value="admin">Admin</option>
+                </select>
+              </>
+            ) : (
+              <input
+                className="field capitalize"
+                value={membership.role}
+                readOnly
+              />
+            )}
+            <span className="mt-1 block text-xs font-semibold text-slate-500">
+              {canChangeRole
+                ? "Owners and admins can promote or demote joined members."
+                : "This role cannot be changed here."}
+            </span>
+          </label>
+        ) : null}
         {player ? (
           <label className="flex min-h-11 items-center gap-3 rounded-xl border border-slate-200 px-3 text-sm font-bold text-[var(--ink)]">
             <input type="hidden" name="isActive" value="false" />
@@ -160,57 +202,13 @@ export function PlayerForm({
   );
 }
 
-export function AdminRoleButton({ player }: { player: EditablePlayer }) {
-  const [state, action, pending] = useActionState(
-    setPlayerAdminRole,
-    initialState,
-  );
-
-  if (!player.appUserId || !player.accountRole) return null;
-
-  return (
-    <form action={action} className="flex flex-wrap items-start gap-2">
-      <input type="hidden" name="appUserId" value={player.appUserId} />
-      <label className="sr-only" htmlFor={`role-${player.id}`}>
-        Role for {player.name}
-      </label>
-      <select
-        id={`role-${player.id}`}
-        name="role"
-        className="field min-h-11 w-36 py-2 text-sm"
-        defaultValue={player.accountRole}
-        disabled={pending}
-      >
-        <option value="member">Member</option>
-        <option value="admin">Admin</option>
-        <option value="super_admin">Super admin</option>
-      </select>
-      <Button type="submit" variant="ghost" disabled={pending}>
-        {pending ? (
-          <>
-            <Spinner />
-            Updating...
-          </>
-        ) : (
-          "Update role"
-        )}
-      </Button>
-      {state.message ? (
-        <p
-          role="status"
-          className={`basis-full text-xs font-semibold ${
-            state.ok ? "text-emerald-700" : "text-rose-600"
-          }`}
-        >
-          {state.message}
-        </p>
-      ) : null}
-    </form>
-  );
-}
-
 export function DeletePlayerButton({ player }: { player: EditablePlayer }) {
   const [state, action, pending] = useActionState(deletePlayer, initialState);
+  const router = useRouter();
+
+  useEffect(() => {
+    if (state.ok) router.refresh();
+  }, [router, state.ok]);
 
   return (
     <form
@@ -226,16 +224,11 @@ export function DeletePlayerButton({ player }: { player: EditablePlayer }) {
         type="submit"
         variant="danger"
         disabled={pending}
+        className="size-10 min-h-10 rounded-full px-0"
         aria-label={`Delete ${player.name}`}
+        title={`Delete ${player.name}`}
       >
-        {pending ? (
-          <>
-            <Spinner />
-            Deleting...
-          </>
-        ) : (
-          "Delete"
-        )}
+        {pending ? <Spinner /> : <Trash2 size={16} />}
       </Button>
       {state.message ? (
         <p

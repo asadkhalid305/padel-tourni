@@ -9,7 +9,9 @@ import Link from "next/link";
 
 import { AccessLimited } from "@/components/access-limited";
 import { Badge, Card, SectionHeading } from "@/components/ui";
+import { WorkspaceEmptyState } from "@/components/workspace-empty-state";
 import { canViewPrivateData, listEvents, listPlayers } from "@/lib/data";
+import { isWorkspaceAdminRole } from "@/lib/roles";
 import { getAuthenticatedUser } from "@/lib/supabase/server";
 import { formatDate } from "@/lib/utils";
 
@@ -18,9 +20,17 @@ export default async function DashboardPage() {
   if (!(await canViewPrivateData(user))) {
     return <AccessLimited />;
   }
+  const workspaceId = user?.activeWorkspaceId;
+  if (!workspaceId) return <AccessLimited />;
 
-  const [players, events] = await Promise.all([listPlayers(), listEvents()]);
+  const [players, events] = await Promise.all([
+    listPlayers(workspaceId),
+    listEvents(workspaceId),
+  ]);
   const liveEvents = events.filter((event) => event.status === "live");
+  const canManage = isWorkspaceAdminRole(user?.activeWorkspaceRole ?? null);
+  const canCreateEvent =
+    players.filter((player) => player.isActive).length >= 4;
   const completedMatches = events.reduce(
     (total, event) => total + event.completedMatches,
     0,
@@ -41,6 +51,12 @@ export default async function DashboardPage() {
         title="Good games start with a fair draw."
         description="Build balanced rotations, keep every court moving, and let live results update the table."
       />
+      {!players.length && !events.length ? (
+        <WorkspaceEmptyState
+          canCreateEvent={canCreateEvent}
+          canManage={canManage}
+        />
+      ) : null}
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {[
@@ -121,9 +137,18 @@ export default async function DashboardPage() {
               </Link>
             </div>
           ) : (
-            <div className="p-8">
+            <div className="space-y-4 p-8">
               <h2 className="text-3xl font-black">Your first event awaits.</h2>
-              <Link href="/events/new">Create an event</Link>
+              <p className="max-w-lg text-sm leading-6 text-white/65">
+                Add players first, then create an event with a balanced draw.
+              </p>
+              <Link
+                href={players.length ? "/events/new" : "/players"}
+                className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-[var(--lime)] px-5 font-black text-[var(--ink)]"
+              >
+                {players.length ? "Create an event" : "Add players"}
+                <ArrowRight size={18} />
+              </Link>
             </div>
           )}
         </Card>
@@ -144,26 +169,32 @@ export default async function DashboardPage() {
             </Link>
           </div>
           <div className="mt-5 space-y-3">
-            {events.slice(0, 4).map((event) => (
-              <Link
-                key={event.id}
-                href={`/events/${event.id}`}
-                className="flex items-center gap-3 rounded-2xl border border-slate-100 p-3 transition hover:border-emerald-200 hover:bg-emerald-50/40"
-              >
-                <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-emerald-100 font-black text-emerald-800">
-                  {event.name[0]}
-                </span>
-                <span className="min-w-0">
-                  <span className="block truncate text-sm font-bold">
-                    {event.name}
+            {events.length ? (
+              events.slice(0, 4).map((event) => (
+                <Link
+                  key={event.id}
+                  href={`/events/${event.id}`}
+                  className="flex items-center gap-3 rounded-2xl border border-slate-100 p-3 transition hover:border-emerald-200 hover:bg-emerald-50/40"
+                >
+                  <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-emerald-100 font-black text-emerald-800">
+                    {event.name[0]}
                   </span>
-                  <span className="block text-xs text-slate-500">
-                    {event.completedMatches}/{event.totalMatches} matches
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm font-bold">
+                      {event.name}
+                    </span>
+                    <span className="block text-xs text-slate-500">
+                      {event.completedMatches}/{event.totalMatches} matches
+                    </span>
                   </span>
-                </span>
-                <ArrowRight className="ml-auto text-slate-300" size={17} />
-              </Link>
-            ))}
+                  <ArrowRight className="ml-auto text-slate-300" size={17} />
+                </Link>
+              ))
+            ) : (
+              <p className="rounded-2xl bg-slate-50 p-4 text-sm font-semibold text-slate-500">
+                Events created in this club will appear here.
+              </p>
+            )}
           </div>
         </Card>
       </section>

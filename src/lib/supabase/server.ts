@@ -8,9 +8,18 @@ import {
   DEFAULT_SUPER_ADMIN_EMAIL,
   isAdminRole,
   isSuperAdminRole,
+  isWorkspaceAdminRole,
   type AppUserRole,
+  type WorkspaceRole,
 } from "@/lib/roles";
+import {
+  ensureDefaultWorkspaceForUser,
+  listUserWorkspaceMemberships,
+  type UserWorkspaceMembership,
+} from "@/lib/workspaces";
 import type { Database } from "@/types/database";
+
+export const ACTIVE_WORKSPACE_COOKIE = "padeltour_active_workspace_id";
 
 export function isSupabaseConfigured() {
   return Boolean(
@@ -71,6 +80,9 @@ export type AuthenticatedAppUser = {
   email: string;
   displayName: string;
   role: AppUserRole;
+  activeWorkspaceId: string | null;
+  activeWorkspaceRole: WorkspaceRole | null;
+  workspaces: UserWorkspaceMembership[];
 };
 
 type AppUserAuthRow = Pick<
@@ -110,6 +122,11 @@ export async function requireSuperAdminUser(): Promise<AuthenticatedAppUser | nu
   return user && isSuperAdminRole(user.role) ? user : null;
 }
 
+export async function requireWorkspaceAdminUser(): Promise<AuthenticatedAppUser | null> {
+  const user = await getAuthenticatedUser();
+  return user && isWorkspaceAdminRole(user.activeWorkspaceRole) ? user : null;
+}
+
 export async function ensureAppUser({
   id,
   email,
@@ -139,12 +156,26 @@ export async function ensureAppUser({
   if (error) throw error;
 
   const promoted = await promoteDefaultSuperAdmin(data);
+  const cookieStore = await cookies();
+  const membership = await ensureDefaultWorkspaceForUser(
+    client,
+    {
+      id: promoted.id,
+      email: promoted.email,
+      displayName: promoted.display_name,
+    },
+    cookieStore.get(ACTIVE_WORKSPACE_COOKIE)?.value,
+  );
+  const workspaces = await listUserWorkspaceMemberships(client, promoted.id);
 
   return {
     id: promoted.id,
     email: promoted.email,
     displayName: promoted.display_name,
     role: promoted.role,
+    activeWorkspaceId: membership.workspaceId,
+    activeWorkspaceRole: membership.role,
+    workspaces,
   };
 }
 

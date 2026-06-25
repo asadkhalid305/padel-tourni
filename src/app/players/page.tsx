@@ -1,12 +1,14 @@
 import { AccessLimited } from "@/components/access-limited";
 import { PlayerManager } from "@/components/player-manager";
 import { SectionHeading } from "@/components/ui";
+import { WorkspaceInviteManager } from "@/components/workspace-invite-manager";
 import {
   canViewPrivateData,
-  listLinkableAppUsers,
   listPlayers,
+  listWorkspaceMembers,
+  listWorkspaceInvites,
 } from "@/lib/data";
-import { isAdminRole, isSuperAdminRole } from "@/lib/roles";
+import { isWorkspaceAdminRole } from "@/lib/roles";
 import { getAuthenticatedUser } from "@/lib/supabase/server";
 
 export const metadata = { title: "Players" };
@@ -16,26 +18,30 @@ export default async function PlayersPage() {
   if (!(await canViewPrivateData(user))) {
     return <AccessLimited />;
   }
+  const workspaceId = user?.activeWorkspaceId;
+  if (!workspaceId) return <AccessLimited />;
 
-  const canManage = user ? isAdminRole(user.role) : false;
-  const canManageRoles = user ? isSuperAdminRole(user.role) : false;
-  const [players, linkableUsers] = await Promise.all([
-    listPlayers(),
-    canManage ? listLinkableAppUsers() : Promise.resolve([]),
+  const canManage = isWorkspaceAdminRole(user?.activeWorkspaceRole ?? null);
+  const [players, invites, members] = await Promise.all([
+    listPlayers(workspaceId),
+    canManage ? listWorkspaceInvites(workspaceId) : Promise.resolve([]),
+    listWorkspaceMembers(workspaceId),
   ]);
   return (
     <div className="space-y-7">
       <SectionHeading
-        eyebrow="Reusable roster"
+        eyebrow="People"
         title="Players"
-        description="Ratings guide team balance. Event snapshots preserve historical names and ratings."
+        description="Manage the people who can play events. A player can be linked to a signed-in account now or later."
       />
       <PlayerManager
         players={players}
+        members={members}
         canManage={canManage}
-        canManageRoles={canManageRoles}
-        linkableUsers={linkableUsers}
+        canManageRoles={canManage}
+        currentAppUserId={user.id}
       />
+      {canManage ? <WorkspaceInviteManager invites={invites} /> : null}
     </div>
   );
 }

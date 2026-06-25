@@ -3,8 +3,9 @@ import Link from "next/link";
 
 import { AccessLimited } from "@/components/access-limited";
 import { Badge, Card, SectionHeading } from "@/components/ui";
-import { canViewPrivateData, listEvents } from "@/lib/data";
-import { isAdminRole } from "@/lib/roles";
+import { WorkspaceEmptyState } from "@/components/workspace-empty-state";
+import { canViewPrivateData, listEvents, listPlayers } from "@/lib/data";
+import { isWorkspaceAdminRole } from "@/lib/roles";
 import { getAuthenticatedUser } from "@/lib/supabase/server";
 import { formatDate } from "@/lib/utils";
 
@@ -21,9 +22,16 @@ export default async function EventsPage() {
   if (!(await canViewPrivateData(user))) {
     return <AccessLimited />;
   }
+  const workspaceId = user?.activeWorkspaceId;
+  if (!workspaceId) return <AccessLimited />;
 
-  const events = await listEvents();
-  const canManage = user ? isAdminRole(user.role) : false;
+  const [events, players] = await Promise.all([
+    listEvents(workspaceId),
+    listPlayers(workspaceId),
+  ]);
+  const canManage = isWorkspaceAdminRole(user?.activeWorkspaceRole ?? null);
+  const canCreateEvent =
+    players.filter((player) => player.isActive).length >= 4;
   return (
     <div className="space-y-7">
       <SectionHeading
@@ -31,16 +39,30 @@ export default async function EventsPage() {
         title="Events"
         description="Everything from first draw to final table, kept together."
         action={
-          canManage ? (
+          canManage && canCreateEvent ? (
             <Link
               href="/events/new"
               className="inline-flex min-h-11 items-center rounded-xl bg-[var(--ink)] px-4 text-sm font-bold text-white"
             >
               Create event
             </Link>
+          ) : canManage ? (
+            <span
+              aria-disabled="true"
+              className="inline-flex min-h-11 cursor-not-allowed items-center rounded-xl bg-slate-200 px-4 text-sm font-bold text-slate-500"
+              title="Add at least four players before creating an event."
+            >
+              Create event
+            </span>
           ) : null
         }
       />
+      {!events.length ? (
+        <WorkspaceEmptyState
+          canCreateEvent={canCreateEvent}
+          canManage={canManage}
+        />
+      ) : null}
       <div className="grid gap-4 lg:grid-cols-2 2xl:grid-cols-3">
         {events.map((event) => (
           <Card key={event.id} className="group">

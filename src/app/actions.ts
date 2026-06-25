@@ -1,6 +1,9 @@
 "use server";
 
+import { createHash, randomBytes } from "node:crypto";
+
 import { revalidatePath } from "next/cache";
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 
@@ -18,18 +21,21 @@ import { calculateScheduleCapacity } from "@/domain/schedule-calculations";
 import type { ScheduleCapacity } from "@/domain/schedule-calculations";
 import { generateSchedule } from "@/domain/scheduler";
 import {
+  ACTIVE_WORKSPACE_COOKIE,
   createAuthClient,
   createServerClient,
-  requireAdminUser,
-  requireSuperAdminUser,
+  getAuthenticatedUser,
+  requireWorkspaceAdminUser,
 } from "@/lib/supabase/server";
-import { appUserRoleSchema, setAppUserRole } from "@/lib/auth-admin";
 import { eventSchema, playerSchema, scoreSchema } from "@/lib/validation";
+import { requestOrigin } from "@/lib/request-origin";
+import { ensureWorkspaceMemberPlayer } from "@/lib/workspaces";
 import type { Database } from "@/types/database";
 
 export type ActionState = {
   ok: boolean;
   message: string;
+  inviteUrl?: string;
 };
 
 const unavailable: ActionState = {
@@ -42,14 +48,31 @@ const forbidden: ActionState = {
   message: "Only admins can make changes.",
 };
 
-const roleChangeSchema = z.object({
-  appUserId: z.string().uuid(),
-  role: appUserRoleSchema,
+const workspaceMemberRoleChangeSchema = z.object({
+  membershipId: z.string().uuid(),
+  role: z.enum(["member", "admin"]),
 });
+const workspaceMembershipIdSchema = z.string().uuid();
+const workspaceIdSchema = z.string().uuid();
 
 const eventIdSchema = z.string().uuid();
+const inviteTokenSchema = z.string().min(32).max(256);
+const inviteEmailSchema = z.preprocess((value) => {
+  if (typeof value !== "string") return value;
+  const trimmed = value.trim().toLowerCase();
+  return trimmed ? trimmed : null;
+}, z.string().email().nullable());
+const inviteExpiryDaysSchema = z.coerce
+  .number()
+  .int()
+  .min(1)
+  .max(30)
+  .default(14);
 type EventInput = z.infer<typeof eventSchema>;
 type ServerClient = NonNullable<ReturnType<typeof createServerClient>>;
+type WorkspaceAdminUser = NonNullable<
+  Awaited<ReturnType<typeof requireWorkspaceAdminUser>>
+> & { activeWorkspaceId: string };
 type EventRow = Database["public"]["Tables"]["events"]["Row"];
 type EventPlayerSnapshot = Pick<
   Database["public"]["Tables"]["event_players"]["Row"],
@@ -89,9 +112,21 @@ const roundLineupSchema = z
     }
   });
 
-async function assertAdminAction(): Promise<ActionState | null> {
-  const user = await requireAdminUser();
-  return user ? null : forbidden;
+async function requireWorkspaceAdminAction(): Promise<
+  WorkspaceAdminUser | ActionState
+> {
+  const user = await requireWorkspaceAdminUser();
+  if (!user?.activeWorkspaceId) return forbidden;
+
+  return user as WorkspaceAdminUser;
+}
+
+function isActionState(value: ActionState | object): value is ActionState {
+  return "ok" in value && "message" in value;
+}
+
+function hashInviteToken(token: string) {
+  return createHash("sha256").update(token).digest("hex");
 }
 
 export async function signOut() {
@@ -100,6 +135,47 @@ export async function signOut() {
     await authClient.auth.signOut();
   }
   redirect("/login");
+}
+
+export async function switchActiveWorkspace(formData: FormData) {
+  const workspaceId = workspaceIdSchema.safeParse(formData.get("workspaceId"));
+  if (!workspaceId.success) {
+    redirect("/");
+  }
+
+  const user = await getAuthenticatedUser();
+  if (!user) {
+    redirect("/login");
+  }
+
+  const client = createServerClient();
+  if (!client) {
+    redirect("/");
+  }
+
+  const { data: membership, error } = await client
+    .from("workspace_memberships")
+    .select("workspace_id")
+    .eq("workspace_id", workspaceId.data)
+    .eq("app_user_id", user.id)
+    .maybeSingle();
+  if (error || !membership) {
+    redirect("/");
+  }
+
+  const cookieStore = await cookies();
+  cookieStore.set(ACTIVE_WORKSPACE_COOKIE, membership.workspace_id, {
+    sameSite: "lax",
+    path: "/",
+  });
+  revalidatePath("/", "layout");
+  redirect(safeInternalPath(formData.get("nextPath")));
+}
+
+function safeInternalPath(value: FormDataEntryValue | null) {
+  if (typeof value !== "string") return "/";
+  if (!value.startsWith("/") || value.startsWith("//")) return "/";
+  return value;
 }
 
 export async function savePlayer(
@@ -117,30 +193,70 @@ export async function savePlayer(
   if (!parsed.success) {
     return { ok: false, message: parsed.error.issues[0].message };
   }
-  const authorizationError = await assertAdminAction();
-  if (authorizationError) return authorizationError;
+  const roleChange = workspaceMemberRoleChangeSchema.partial().safeParse({
+    membershipId: formData.get("membershipId") || undefined,
+    role: formData.get("workspaceRole") || undefined,
+  });
+  if (!roleChange.success) {
+    return { ok: false, message: "Choose a valid member role." };
+  }
+  const adminUser = await requireWorkspaceAdminAction();
+  if (isActionState(adminUser)) return adminUser;
 
   const client = createServerClient();
   if (!client) return unavailable;
   let accountEmail = parsed.data.accountEmail;
+  let playerName = parsed.data.name;
   if (parsed.data.appUserId) {
-    const { data: appUser, error: appUserError } = await client
-      .from("app_users")
-      .select("email")
-      .eq("id", parsed.data.appUserId)
-      .single();
-    if (appUserError) return { ok: false, message: appUserError.message };
-    accountEmail = appUser.email;
+    try {
+      const account = await getWorkspaceAppUser(
+        client,
+        adminUser.activeWorkspaceId,
+        parsed.data.appUserId,
+      );
+      accountEmail = account?.email ?? null;
+      playerName = account?.displayName || account?.email || playerName;
+      if (parsed.data.id) {
+        const { data: existingPlayer, error: existingPlayerError } =
+          await client
+            .from("players")
+            .select("name")
+            .eq("id", parsed.data.id)
+            .eq("workspace_id", adminUser.activeWorkspaceId)
+            .single();
+        if (existingPlayerError) {
+          return { ok: false, message: existingPlayerError.message };
+        }
+        playerName = existingPlayer.name;
+      }
+    } catch (error) {
+      return {
+        ok: false,
+        message:
+          error instanceof Error ? error.message : "Unable to verify account.",
+      };
+    }
+    if (!accountEmail) {
+      return {
+        ok: false,
+        message: "Choose an account that belongs to this club.",
+      };
+    }
   }
   const payload = {
-    name: parsed.data.name,
+    workspace_id: adminUser.activeWorkspaceId,
+    name: playerName,
     app_user_id: parsed.data.appUserId,
     account_email: accountEmail,
     rating: parsed.data.rating,
     is_active: parsed.data.isActive,
   };
   const result = parsed.data.id
-    ? await client.from("players").update(payload).eq("id", parsed.data.id)
+    ? await client
+        .from("players")
+        .update(payload)
+        .eq("id", parsed.data.id)
+        .eq("workspace_id", adminUser.activeWorkspaceId)
     : await client.from("players").insert(payload);
   if (isUndefinedColumnError(result.error)) {
     const fallbackPayload = {
@@ -148,12 +264,14 @@ export async function savePlayer(
       account_email: payload.account_email,
       rating: payload.rating,
       is_active: payload.is_active,
+      workspace_id: payload.workspace_id,
     };
     const fallbackResult = parsed.data.id
       ? await client
           .from("players")
           .update(fallbackPayload)
           .eq("id", parsed.data.id)
+          .eq("workspace_id", adminUser.activeWorkspaceId)
       : await client.from("players").insert(fallbackPayload);
     if (fallbackResult.error) {
       return { ok: false, message: fallbackResult.error.message };
@@ -161,6 +279,17 @@ export async function savePlayer(
   } else if (result.error) {
     return { ok: false, message: result.error.message };
   }
+
+  if (roleChange.data.membershipId && roleChange.data.role) {
+    const roleResult = await updateWorkspaceMemberRole({
+      client,
+      adminUser,
+      membershipId: roleChange.data.membershipId,
+      role: roleChange.data.role,
+    });
+    if (!roleResult.ok) return roleResult;
+  }
+
   revalidatePath("/players");
   revalidatePath("/");
   return { ok: true, message: "Player saved." };
@@ -174,8 +303,8 @@ export async function deletePlayer(
   if (!parsed.success) {
     return { ok: false, message: "Choose a valid player to delete." };
   }
-  const authorizationError = await assertAdminAction();
-  if (authorizationError) return authorizationError;
+  const adminUser = await requireWorkspaceAdminAction();
+  if (isActionState(adminUser)) return adminUser;
 
   const client = createServerClient();
   if (!client) return unavailable;
@@ -195,7 +324,11 @@ export async function deletePlayer(
     };
   }
 
-  const { error } = await client.from("players").delete().eq("id", parsed.data);
+  const { error } = await client
+    .from("players")
+    .delete()
+    .eq("id", parsed.data)
+    .eq("workspace_id", adminUser.activeWorkspaceId);
   if (error) return { ok: false, message: error.message };
 
   revalidatePath("/players");
@@ -204,36 +337,249 @@ export async function deletePlayer(
   return { ok: true, message: "Player deleted." };
 }
 
-export async function setPlayerAdminRole(
+async function updateWorkspaceMemberRole({
+  client,
+  adminUser,
+  membershipId,
+  role,
+}: {
+  client: ServerClient;
+  adminUser: WorkspaceAdminUser;
+  membershipId: string;
+  role: "member" | "admin";
+}): Promise<ActionState> {
+  const { data: membership, error: membershipError } = await client
+    .from("workspace_memberships")
+    .select("id,app_user_id,role")
+    .eq("id", membershipId)
+    .eq("workspace_id", adminUser.activeWorkspaceId)
+    .single();
+  if (membershipError) return { ok: false, message: membershipError.message };
+  if (membership.app_user_id === adminUser.id) {
+    return { ok: false, message: "You cannot change your own club role." };
+  }
+  if (membership.role === "owner") {
+    return { ok: false, message: "Club owners cannot be changed here." };
+  }
+
+  const { error } = await client
+    .from("workspace_memberships")
+    .update({ role })
+    .eq("id", membership.id)
+    .eq("workspace_id", adminUser.activeWorkspaceId);
+  if (error) return { ok: false, message: error.message };
+
+  return { ok: true, message: "Club role updated." };
+}
+
+export async function removeWorkspaceMember(
   _previous: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  const parsed = roleChangeSchema.safeParse({
-    appUserId: formData.get("appUserId"),
-    role: formData.get("role"),
-  });
-  if (!parsed.success) {
-    return { ok: false, message: parsed.error.issues[0].message };
+  const membershipId = workspaceMembershipIdSchema.safeParse(
+    formData.get("membershipId"),
+  );
+  if (!membershipId.success) {
+    return { ok: false, message: "Choose a valid member." };
   }
 
-  const superAdminUser = await requireSuperAdminUser();
-  if (!superAdminUser) {
+  const adminUser = await requireWorkspaceAdminAction();
+  if (isActionState(adminUser)) return adminUser;
+
+  const client = createServerClient();
+  if (!client) return unavailable;
+
+  const { data: membership, error: membershipError } = await client
+    .from("workspace_memberships")
+    .select("id,app_user_id,role")
+    .eq("id", membershipId.data)
+    .eq("workspace_id", adminUser.activeWorkspaceId)
+    .single();
+  if (membershipError) return { ok: false, message: membershipError.message };
+  if (membership.app_user_id === adminUser.id) {
+    return { ok: false, message: "You cannot remove yourself." };
+  }
+  if (membership.role === "owner") {
+    return { ok: false, message: "Club owners cannot be removed here." };
+  }
+
+  const { error: unlinkError } = await client
+    .from("players")
+    .update({ app_user_id: null })
+    .eq("workspace_id", adminUser.activeWorkspaceId)
+    .eq("app_user_id", membership.app_user_id);
+  if (unlinkError) return { ok: false, message: unlinkError.message };
+
+  const { error } = await client
+    .from("workspace_memberships")
+    .delete()
+    .eq("id", membership.id)
+    .eq("workspace_id", adminUser.activeWorkspaceId);
+  if (error) return { ok: false, message: error.message };
+
+  revalidatePath("/players");
+  return { ok: true, message: "Member removed." };
+}
+
+export async function createWorkspaceInvite(
+  _previous: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const adminUser = await requireWorkspaceAdminAction();
+  if (isActionState(adminUser)) return adminUser;
+
+  const invitedEmail = inviteEmailSchema.safeParse(formData.get("email"));
+  if (!invitedEmail.success) {
+    return { ok: false, message: invitedEmail.error.issues[0].message };
+  }
+  const expiresInDays = inviteExpiryDaysSchema.safeParse(
+    formData.get("expiresInDays") || undefined,
+  );
+  if (!expiresInDays.success) {
     return {
       ok: false,
-      message: "Only super admins can change account roles.",
+      message: "Choose an invite expiry between 1 and 30 days.",
     };
   }
 
-  const result = await setAppUserRole(parsed.data.appUserId, parsed.data.role);
-  if (!result.ok) {
-    return { ok: false, message: result.message };
-  }
+  const client = createServerClient();
+  if (!client) return unavailable;
 
+  const token = randomBytes(32).toString("base64url");
+  const expiresAt = new Date(
+    Date.now() + expiresInDays.data * 24 * 60 * 60 * 1000,
+  );
+  const { error } = await client.from("workspace_invites").insert({
+    workspace_id: adminUser.activeWorkspaceId,
+    token_hash: hashInviteToken(token),
+    invited_email: invitedEmail.data,
+    created_by_app_user_id: adminUser.id,
+    expires_at: expiresAt.toISOString(),
+  });
+  if (error) return { ok: false, message: error.message };
+
+  const inviteUrl = `${await requestOrigin()}/invites/${token}`;
   revalidatePath("/players");
   return {
     ok: true,
-    message: `Role updated to ${parsed.data.role.replace("_", " ")}.`,
+    message:
+      "Club invite link created. Share it with the person you want to add.",
+    inviteUrl,
   };
+}
+
+export async function revokeWorkspaceInvite(
+  _previous: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const adminUser = await requireWorkspaceAdminAction();
+  if (isActionState(adminUser)) return adminUser;
+
+  const inviteId = z.string().uuid().safeParse(formData.get("inviteId"));
+  if (!inviteId.success) {
+    return { ok: false, message: "Choose a valid invite." };
+  }
+
+  const client = createServerClient();
+  if (!client) return unavailable;
+
+  const { error } = await client
+    .from("workspace_invites")
+    .update({ status: "revoked" })
+    .eq("id", inviteId.data)
+    .eq("workspace_id", adminUser.activeWorkspaceId)
+    .eq("status", "pending");
+  if (error) return { ok: false, message: error.message };
+
+  revalidatePath("/players");
+  return { ok: true, message: "Invite revoked." };
+}
+
+export async function acceptWorkspaceInvite(
+  _previous: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const token = inviteTokenSchema.safeParse(formData.get("token"));
+  if (!token.success) {
+    return { ok: false, message: "This invite link is invalid." };
+  }
+
+  const user = await getAuthenticatedUser();
+  if (!user) {
+    return { ok: false, message: "Sign in to accept this invite." };
+  }
+
+  const client = createServerClient();
+  if (!client) return unavailable;
+
+  const { data: invite, error: inviteError } = await client
+    .from("workspace_invites")
+    .select("id,workspace_id,invited_email,status,expires_at")
+    .eq("token_hash", hashInviteToken(token.data))
+    .maybeSingle();
+  if (inviteError) return { ok: false, message: inviteError.message };
+  if (!invite) return { ok: false, message: "This invite was not found." };
+  if (invite.status !== "pending") {
+    return { ok: false, message: "This invite is no longer active." };
+  }
+  if (new Date(invite.expires_at).getTime() <= Date.now()) {
+    await client
+      .from("workspace_invites")
+      .update({ status: "expired" })
+      .eq("id", invite.id);
+    return { ok: false, message: "This invite has expired." };
+  }
+  if (invite.invited_email && invite.invited_email !== user.email) {
+    return {
+      ok: false,
+      message: "This invite was created for a different email address.",
+    };
+  }
+
+  const { error: membershipError } = await client
+    .from("workspace_memberships")
+    .upsert(
+      {
+        workspace_id: invite.workspace_id,
+        app_user_id: user.id,
+        role: "member",
+      },
+      { onConflict: "workspace_id,app_user_id", ignoreDuplicates: true },
+    );
+  if (membershipError) {
+    return { ok: false, message: membershipError.message };
+  }
+  try {
+    await ensureWorkspaceMemberPlayer(client, invite.workspace_id, user);
+  } catch (error) {
+    return {
+      ok: false,
+      message:
+        error instanceof Error
+          ? error.message
+          : "Unable to create player profile.",
+    };
+  }
+
+  if (invite.invited_email) {
+    const { error: updateError } = await client
+      .from("workspace_invites")
+      .update({
+        status: "accepted",
+        accepted_by_app_user_id: user.id,
+        accepted_at: new Date().toISOString(),
+      })
+      .eq("id", invite.id);
+    if (updateError) return { ok: false, message: updateError.message };
+  }
+
+  const cookieStore = await cookies();
+  cookieStore.set(ACTIVE_WORKSPACE_COOKIE, invite.workspace_id, {
+    sameSite: "lax",
+    path: "/",
+  });
+  revalidatePath("/");
+  redirect("/");
 }
 
 function parseEventFormData(formData: FormData) {
@@ -266,11 +612,13 @@ function eventSeed(event: EventInput) {
 
 async function getOrderedSourcePlayers(
   client: ServerClient,
+  workspaceId: string,
   playerIds: string[],
 ) {
   const { data: sourcePlayers, error: playerError } = await client
     .from("players")
     .select("id,name,rating")
+    .eq("workspace_id", workspaceId)
     .in("id", playerIds);
   if (playerError || sourcePlayers.length !== playerIds.length) {
     throw new Error("One or more players are invalid.");
@@ -283,15 +631,47 @@ async function getOrderedSourcePlayers(
   });
 }
 
+async function getWorkspaceAppUser(
+  client: ServerClient,
+  workspaceId: string,
+  appUserId: string,
+) {
+  const { data: membership, error: membershipError } = await client
+    .from("workspace_memberships")
+    .select("app_user_id")
+    .eq("workspace_id", workspaceId)
+    .eq("app_user_id", appUserId)
+    .maybeSingle();
+  if (membershipError) throw membershipError;
+  if (!membership) return null;
+
+  const { data: appUser, error: appUserError } = await client
+    .from("app_users")
+    .select("email,display_name")
+    .eq("id", appUserId)
+    .single();
+  if (appUserError) throw appUserError;
+
+  return {
+    email: appUser.email,
+    displayName: appUser.display_name,
+  };
+}
+
 async function insertEventSchedule(options: {
   client: ServerClient;
+  workspaceId: string;
   eventId: string;
   event: EventInput;
   capacity: ScheduleCapacity;
   seed: number;
 }) {
-  const { client, eventId, event, capacity, seed } = options;
-  const orderedPlayers = await getOrderedSourcePlayers(client, event.playerIds);
+  const { client, workspaceId, eventId, event, capacity, seed } = options;
+  const orderedPlayers = await getOrderedSourcePlayers(
+    client,
+    workspaceId,
+    event.playerIds,
+  );
   const { data: snapshots, error: snapshotError } = await client
     .from("event_players")
     .insert(
@@ -409,8 +789,8 @@ async function createEventWithErrorPath(formData: FormData, errorPath: string) {
       `${errorPath}?error=${encodeURIComponent(parsed.error.issues[0].message)}`,
     );
   }
-  const adminUser = await requireAdminUser();
-  if (!adminUser) {
+  const adminUser = await requireWorkspaceAdminUser();
+  if (!adminUser?.activeWorkspaceId) {
     redirect("/events?error=Only%20admins%20can%20create%20events");
   }
 
@@ -434,6 +814,7 @@ async function createEventWithErrorPath(formData: FormData, errorPath: string) {
   const { data: event, error: eventError } = await client
     .from("events")
     .insert({
+      workspace_id: adminUser.activeWorkspaceId,
       name: parsed.data.name,
       venue: parsed.data.venue,
       starts_at: parsed.data.startsAt.toISOString(),
@@ -455,6 +836,7 @@ async function createEventWithErrorPath(formData: FormData, errorPath: string) {
   try {
     await insertEventSchedule({
       client,
+      workspaceId: adminUser.activeWorkspaceId,
       eventId: event.id,
       event: parsed.data,
       capacity,
@@ -490,8 +872,8 @@ export async function updateEvent(formData: FormData) {
       )}`,
     );
   }
-  const adminUser = await requireAdminUser();
-  if (!adminUser) {
+  const adminUser = await requireWorkspaceAdminUser();
+  if (!adminUser?.activeWorkspaceId) {
     redirect("/events?error=Only%20admins%20can%20edit%20events");
   }
 
@@ -515,7 +897,12 @@ export async function updateEvent(formData: FormData) {
 
   const [{ data: event, error: eventError }, playersResult, roundsResult] =
     await Promise.all([
-      client.from("events").select("*").eq("id", eventId.data).single(),
+      client
+        .from("events")
+        .select("*")
+        .eq("id", eventId.data)
+        .eq("workspace_id", adminUser.activeWorkspaceId)
+        .single(),
       client
         .from("event_players")
         .select("player_id,display_order")
@@ -646,6 +1033,7 @@ export async function updateEvent(formData: FormData) {
     try {
       await insertEventSchedule({
         client,
+        workspaceId: adminUser.activeWorkspaceId,
         eventId: eventId.data,
         event: parsed.data,
         capacity,
@@ -682,8 +1070,8 @@ export async function deleteEvent(
   if (!parsed.success) {
     return { ok: false, message: "Choose a valid event to delete." };
   }
-  const authorizationError = await assertAdminAction();
-  if (authorizationError) return authorizationError;
+  const adminUser = await requireWorkspaceAdminAction();
+  if (isActionState(adminUser)) return adminUser;
 
   const client = createServerClient();
   if (!client) return unavailable;
@@ -694,6 +1082,7 @@ export async function deleteEvent(
         .from("events")
         .select("status,starts_at")
         .eq("id", parsed.data)
+        .eq("workspace_id", adminUser.activeWorkspaceId)
         .single(),
       client.from("matches").select("status").eq("event_id", parsed.data),
     ],
@@ -717,7 +1106,11 @@ export async function deleteEvent(
     };
   }
 
-  const { error } = await client.from("events").delete().eq("id", parsed.data);
+  const { error } = await client
+    .from("events")
+    .delete()
+    .eq("id", parsed.data)
+    .eq("workspace_id", adminUser.activeWorkspaceId);
   if (error) return { ok: false, message: error.message };
 
   revalidatePath("/");
@@ -733,8 +1126,8 @@ export async function completeEvent(
   if (!parsed.success) {
     return { ok: false, message: "Choose a valid event to complete." };
   }
-  const authorizationError = await assertAdminAction();
-  if (authorizationError) return authorizationError;
+  const adminUser = await requireWorkspaceAdminAction();
+  if (isActionState(adminUser)) return adminUser;
 
   const client = createServerClient();
   if (!client) return unavailable;
@@ -745,6 +1138,7 @@ export async function completeEvent(
         .from("events")
         .select("status,starts_at")
         .eq("id", parsed.data)
+        .eq("workspace_id", adminUser.activeWorkspaceId)
         .single(),
       client.from("matches").select("status").eq("event_id", parsed.data),
     ],
@@ -782,7 +1176,8 @@ export async function completeEvent(
   const eventResult = await client
     .from("events")
     .update({ status: "completed" })
-    .eq("id", parsed.data);
+    .eq("id", parsed.data)
+    .eq("workspace_id", adminUser.activeWorkspaceId);
   if (eventResult.error) {
     return { ok: false, message: eventResult.error.message };
   }
@@ -809,8 +1204,8 @@ export async function saveScore(
   if (!parsed.success) {
     return { ok: false, message: parsed.error.issues[0].message };
   }
-  const authorizationError = await assertAdminAction();
-  if (authorizationError) return authorizationError;
+  const adminUser = await requireWorkspaceAdminAction();
+  if (isActionState(adminUser)) return adminUser;
 
   const client = createServerClient();
   if (!client) return unavailable;
@@ -827,6 +1222,7 @@ export async function saveScore(
         .from("events")
         .select("status,starts_at")
         .eq("id", parsed.data.eventId)
+        .eq("workspace_id", adminUser.activeWorkspaceId)
         .single(),
     ],
   );
@@ -862,8 +1258,8 @@ export async function saveScore(
 }
 
 export async function updateTimer(formData: FormData) {
-  const adminUser = await requireAdminUser();
-  if (!adminUser) return;
+  const adminUser = await requireWorkspaceAdminUser();
+  if (!adminUser?.activeWorkspaceId) return;
 
   const client = createServerClient();
   if (!client) return;
@@ -878,7 +1274,12 @@ export async function updateTimer(formData: FormData) {
       .eq("id", matchId)
       .eq("event_id", eventId)
       .single(),
-    client.from("events").select("status,starts_at").eq("id", eventId).single(),
+    client
+      .from("events")
+      .select("status,starts_at")
+      .eq("id", eventId)
+      .eq("workspace_id", adminUser.activeWorkspaceId)
+      .single(),
   ]);
   if (
     !match ||
@@ -932,8 +1333,8 @@ export async function updateRoundLineup(
   if (!parsed.success) {
     return { ok: false, message: parsed.error.issues[0].message };
   }
-  const authorizationError = await assertAdminAction();
-  if (authorizationError) return authorizationError;
+  const adminUser = await requireWorkspaceAdminAction();
+  if (isActionState(adminUser)) return adminUser;
 
   const client = createServerClient();
   if (!client) return unavailable;
@@ -960,6 +1361,7 @@ export async function updateRoundLineup(
         .from("events")
         .select("status,starts_at")
         .eq("id", eventId)
+        .eq("workspace_id", adminUser.activeWorkspaceId)
         .single(),
       client
         .from("event_rounds")
@@ -1076,12 +1478,20 @@ export async function updateRoundLineup(
 }
 
 export async function regenerateEvent(formData: FormData) {
-  const adminUser = await requireAdminUser();
-  if (!adminUser) return;
+  const adminUser = await requireWorkspaceAdminUser();
+  if (!adminUser?.activeWorkspaceId) return;
 
   const client = createServerClient();
   if (!client) return;
   const eventId = String(formData.get("eventId"));
+  const { data: event } = await client
+    .from("events")
+    .select("id")
+    .eq("id", eventId)
+    .eq("workspace_id", adminUser.activeWorkspaceId)
+    .single();
+  if (!event) return;
+
   const { data: matches } = await client
     .from("matches")
     .select("status")

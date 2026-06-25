@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 
 import { AppShell } from "@/components/app-shell";
+import { listPlayers } from "@/lib/data";
 import { getAuthenticatedUser } from "@/lib/supabase/server";
 
 import "./globals.css";
@@ -37,11 +38,21 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   const userPromise = getAuthenticatedUser();
+  const activePlayerCountPromise = userPromise.then(async (user) => {
+    if (!user?.activeWorkspaceId) return 0;
+    const players = await listPlayers(user.activeWorkspaceId);
+    return players.filter((player) => player.isActive).length;
+  });
 
   return (
     <html lang="en">
       <body>
-        <AppShell userPromise={userPromise}>{children}</AppShell>
+        <AppShell
+          userPromise={userPromise}
+          activePlayerCountPromise={activePlayerCountPromise}
+        >
+          {children}
+        </AppShell>
       </body>
     </html>
   );

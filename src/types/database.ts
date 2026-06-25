@@ -39,9 +39,129 @@ export type Database = {
         };
         Relationships: [];
       };
+      workspaces: {
+        Row: {
+          id: string;
+          name: string;
+          personal_owner_app_user_id: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          name: string;
+          personal_owner_app_user_id?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<
+          Database["public"]["Tables"]["workspaces"]["Insert"]
+        >;
+        Relationships: [
+          {
+            foreignKeyName: "workspaces_personal_owner_app_user_id_fkey";
+            columns: ["personal_owner_app_user_id"];
+            isOneToOne: true;
+            referencedRelation: "app_users";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      workspace_memberships: {
+        Row: {
+          id: string;
+          workspace_id: string;
+          app_user_id: string;
+          role: "owner" | "admin" | "member";
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          workspace_id: string;
+          app_user_id: string;
+          role?: "owner" | "admin" | "member";
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<
+          Database["public"]["Tables"]["workspace_memberships"]["Insert"]
+        >;
+        Relationships: [
+          {
+            foreignKeyName: "workspace_memberships_app_user_id_fkey";
+            columns: ["app_user_id"];
+            isOneToOne: false;
+            referencedRelation: "app_users";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "workspace_memberships_workspace_id_fkey";
+            columns: ["workspace_id"];
+            isOneToOne: false;
+            referencedRelation: "workspaces";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      workspace_invites: {
+        Row: {
+          id: string;
+          workspace_id: string;
+          token_hash: string;
+          invited_email: string | null;
+          status: "pending" | "accepted" | "revoked" | "expired";
+          created_by_app_user_id: string;
+          accepted_by_app_user_id: string | null;
+          expires_at: string;
+          accepted_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          workspace_id: string;
+          token_hash: string;
+          invited_email?: string | null;
+          status?: "pending" | "accepted" | "revoked" | "expired";
+          created_by_app_user_id: string;
+          accepted_by_app_user_id?: string | null;
+          expires_at: string;
+          accepted_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<
+          Database["public"]["Tables"]["workspace_invites"]["Insert"]
+        >;
+        Relationships: [
+          {
+            foreignKeyName: "workspace_invites_accepted_by_app_user_id_fkey";
+            columns: ["accepted_by_app_user_id"];
+            isOneToOne: false;
+            referencedRelation: "app_users";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "workspace_invites_created_by_app_user_id_fkey";
+            columns: ["created_by_app_user_id"];
+            isOneToOne: false;
+            referencedRelation: "app_users";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "workspace_invites_workspace_id_fkey";
+            columns: ["workspace_id"];
+            isOneToOne: false;
+            referencedRelation: "workspaces";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       players: {
         Row: {
           id: string;
+          workspace_id: string | null;
           name: string;
           account_email: string | null;
           app_user_id: string | null;
@@ -52,6 +172,7 @@ export type Database = {
         };
         Insert: {
           id?: string;
+          workspace_id?: string | null;
           name: string;
           account_email?: string | null;
           app_user_id?: string | null;
@@ -62,6 +183,7 @@ export type Database = {
         };
         Update: {
           id?: string;
+          workspace_id?: string | null;
           name?: string;
           account_email?: string | null;
           app_user_id?: string | null;
@@ -78,11 +200,19 @@ export type Database = {
             referencedRelation: "app_users";
             referencedColumns: ["id"];
           },
+          {
+            foreignKeyName: "players_workspace_id_fkey";
+            columns: ["workspace_id"];
+            isOneToOne: false;
+            referencedRelation: "workspaces";
+            referencedColumns: ["id"];
+          },
         ];
       };
       events: {
         Row: {
           id: string;
+          workspace_id: string | null;
           name: string;
           venue: string;
           starts_at: string;
@@ -96,6 +226,7 @@ export type Database = {
         };
         Insert: {
           id?: string;
+          workspace_id?: string | null;
           name: string;
           venue?: string;
           starts_at: string;
@@ -108,7 +239,15 @@ export type Database = {
           updated_at?: string;
         };
         Update: Partial<Database["public"]["Tables"]["events"]["Insert"]>;
-        Relationships: [];
+        Relationships: [
+          {
+            foreignKeyName: "events_workspace_id_fkey";
+            columns: ["workspace_id"];
+            isOneToOne: false;
+            referencedRelation: "workspaces";
+            referencedColumns: ["id"];
+          },
+        ];
       };
       event_players: {
         Row: {

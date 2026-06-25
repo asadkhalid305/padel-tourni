@@ -18,10 +18,12 @@ export default async function HistoryPage() {
   if (!(await canViewPrivateData(user))) {
     return <AccessLimited />;
   }
+  const workspaceId = user?.activeWorkspaceId;
+  if (!workspaceId) return <AccessLimited />;
 
   const [players, events] = await Promise.all([
-    getHistoricalPlayerStats(),
-    listEvents(),
+    getHistoricalPlayerStats(workspaceId),
+    listEvents(workspaceId),
   ]);
   const completed = events.filter((event) => event.status === "completed");
   return (

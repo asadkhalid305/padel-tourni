@@ -1,14 +1,14 @@
 "use server";
 
-import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
 import {
   createAuthClient,
   isSupabaseAuthConfigured,
 } from "@/lib/supabase/server";
+import { requestOrigin } from "@/lib/request-origin";
 
-export async function signInWithGoogle() {
+export async function signInWithGoogle(formData: FormData) {
   if (!isSupabaseAuthConfigured()) {
     redirect("/login?error=auth-not-configured");
   }
@@ -18,14 +18,12 @@ export async function signInWithGoogle() {
     redirect("/login?error=auth-not-configured");
   }
 
-  const origin =
-    (await headers()).get("origin") ??
-    process.env.NEXT_PUBLIC_APP_ORIGIN ??
-    "http://localhost:3100";
+  const next = String(formData.get("next") ?? "/");
+  const origin = await requestOrigin();
   const { data, error } = await authClient.auth.signInWithOAuth({
     provider: "google",
     options: {
-      redirectTo: `${origin}/auth/callback`,
+      redirectTo: `${origin}/auth/callback?next=${encodeURIComponent(next)}`,
     },
   });
 

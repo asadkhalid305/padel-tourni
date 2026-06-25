@@ -1,5 +1,7 @@
 import "server-only";
 
+import { createHash } from "node:crypto";
+
 import { canChangeEventSchedule } from "@/domain/event-mutations";
 import { effectiveEventStatus } from "@/domain/event-status";
 import { calculateStandings } from "@/domain/standings";
@@ -10,11 +12,12 @@ import type {
 } from "@/domain/types";
 import { demoEvent, demoEvents, demoPlayers } from "@/lib/demo-data";
 import { sortCareerRows, type CareerPlayerStats } from "@/lib/career-ranking";
-import type { AppUserRole } from "@/lib/roles";
+import type { AppUserRole, WorkspaceRole } from "@/lib/roles";
 import {
   createServerClient,
   isSupabaseConfigured,
 } from "@/lib/supabase/server";
+import { ensureWorkspaceMemberPlayers } from "@/lib/workspaces";
 import type { Database } from "@/types/database";
 
 type PlayerRecord = {
@@ -23,7 +26,6 @@ type PlayerRecord = {
   appUserId: string | null;
   accountEmail: string | null;
   accountDisplayName: string | null;
-  accountRole: AppUserRole | null;
   rating: number;
   isActive: boolean;
 };
@@ -41,11 +43,27 @@ export type EventFormInitialValues = {
   scheduleLocked: boolean;
 };
 
-export type LinkableAppUser = {
+export type WorkspaceInvite = {
   id: string;
+  invitedEmail: string | null;
+  status: string;
+  expiresAt: string;
+  createdAt: string;
+};
+
+export type WorkspaceInvitePreview = {
+  status: "pending" | "accepted" | "revoked" | "expired" | "missing";
+  invitedEmail: string | null;
+  expiresAt: string | null;
+};
+
+export type WorkspaceMember = {
+  membershipId: string;
+  appUserId: string;
   email: string;
   displayName: string;
-  role: AppUserRole;
+  role: WorkspaceRole;
+  linkedPlayerName: string | null;
 };
 
 type EventSummary = {
@@ -87,15 +105,11 @@ type PlayerReadRow = Pick<
 > & {
   app_user_id: string | null;
 };
-type PlayerLinkRow = {
-  id: string;
-  app_user_id: string | null;
-  account_email: string | null;
-};
-
 type EventPlayerRow = Database["public"]["Tables"]["event_players"]["Row"];
 
-export async function listPlayers(): Promise<PlayerRecord[]> {
+export async function listPlayers(
+  workspaceId?: string | null,
+): Promise<PlayerRecord[]> {
   const client = createServerClient();
   if (!client) {
     return demoPlayers.map((player) => ({
@@ -103,14 +117,17 @@ export async function listPlayers(): Promise<PlayerRecord[]> {
       appUserId: null,
       accountEmail: null,
       accountDisplayName: null,
-      accountRole: null,
       isActive: true,
     }));
   }
+  if (!workspaceId) return [];
+
+  await ensureWorkspaceMemberPlayers(client, workspaceId);
 
   const { data, error } = await client
     .from("players")
     .select("id,name,app_user_id,account_email,rating,is_active")
+    .eq("workspace_id", workspaceId)
     .order("is_active", { ascending: false })
     .order("name");
   let players: PlayerReadRow[];
@@ -118,6 +135,7 @@ export async function listPlayers(): Promise<PlayerRecord[]> {
     const { data: fallbackData, error: fallbackError } = await client
       .from("players")
       .select("id,name,account_email,rating,is_active")
+      .eq("workspace_id", workspaceId)
       .order("is_active", { ascending: false })
       .order("name");
     if (fallbackError) throw fallbackError;
@@ -136,12 +154,18 @@ export async function listPlayers(): Promise<PlayerRecord[]> {
   const accountEmails = players
     .map((player) => player.account_email)
     .filter((email): email is string => Boolean(email));
-  const userById = new Map<string, LinkableAppUser>();
-  const userByEmail = new Map<string, LinkableAppUser>();
+  const userById = new Map<
+    string,
+    { id: string; email: string; displayName: string }
+  >();
+  const userByEmail = new Map<
+    string,
+    { id: string; email: string; displayName: string }
+  >();
   if (appUserIds.length || accountEmails.length) {
     const { data: users, error: usersError } = await client
       .from("app_users")
-      .select("id,email,display_name,role")
+      .select("id,email,display_name")
       .or(
         [
           appUserIds.length ? `id.in.(${appUserIds.join(",")})` : null,
@@ -156,7 +180,6 @@ export async function listPlayers(): Promise<PlayerRecord[]> {
         id: user.id,
         email: user.email,
         displayName: user.display_name,
-        role: user.role,
       };
       userById.set(user.id, appUser);
       userByEmail.set(user.email, appUser);
@@ -169,104 +192,141 @@ export async function listPlayers(): Promise<PlayerRecord[]> {
       userByEmail.get(player.account_email ?? "");
     return {
       id: player.id,
-      name: player.name,
+      name: linkedUser?.displayName || player.name,
       appUserId: player.app_user_id ?? linkedUser?.id ?? null,
       accountEmail: linkedUser?.email ?? player.account_email,
       accountDisplayName: linkedUser?.displayName ?? null,
-      accountRole: linkedUser?.role ?? null,
       rating: Number(player.rating),
       isActive: player.is_active,
     };
   });
 }
 
-export async function listLinkableAppUsers(
-  currentPlayerId?: string,
-): Promise<LinkableAppUser[]> {
+export async function listWorkspaceInvites(
+  workspaceId?: string | null,
+): Promise<WorkspaceInvite[]> {
   const client = createServerClient();
-  if (!client) return [];
+  if (!client || !workspaceId) return [];
 
-  const [{ data: users, error: usersError }, linkedResult] = await Promise.all([
-    client
-      .from("app_users")
-      .select("id,email,display_name,role")
-      .order("email"),
-    client
-      .from("players")
-      .select("id,app_user_id")
-      .not("app_user_id", "is", null),
-  ]);
+  const { data, error } = await client
+    .from("workspace_invites")
+    .select("id,invited_email,status,expires_at,created_at")
+    .eq("workspace_id", workspaceId)
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+
+  return data.map((invite) => ({
+    id: invite.id,
+    invitedEmail: invite.invited_email,
+    status: invite.status,
+    expiresAt: invite.expires_at,
+    createdAt: invite.created_at,
+  }));
+}
+
+export async function listWorkspaceMembers(
+  workspaceId?: string | null,
+): Promise<WorkspaceMember[]> {
+  const client = createServerClient();
+  if (!client || !workspaceId) return [];
+
+  const { data: memberships, error: membershipsError } = await client
+    .from("workspace_memberships")
+    .select("id,app_user_id,role")
+    .eq("workspace_id", workspaceId)
+    .order("created_at");
+  if (membershipsError) throw membershipsError;
+  if (!memberships.length) return [];
+
+  const appUserIds = memberships.map((membership) => membership.app_user_id);
+  const [{ data: users, error: usersError }, playersResult] = await Promise.all(
+    [
+      client
+        .from("app_users")
+        .select("id,email,display_name")
+        .in("id", appUserIds)
+        .order("email"),
+      client
+        .from("players")
+        .select("name,app_user_id")
+        .eq("workspace_id", workspaceId)
+        .in("app_user_id", appUserIds),
+    ],
+  );
   if (usersError) throw usersError;
-  let linked: PlayerLinkRow[];
-  if (isUndefinedColumnError(linkedResult.error)) {
-    const { data: fallbackLinked, error: fallbackLinkError } = await client
-      .from("players")
-      .select("id,account_email")
-      .not("account_email", "is", null);
-    if (fallbackLinkError) throw fallbackLinkError;
-    linked = fallbackLinked.map((player) => ({
-      ...player,
-      app_user_id:
-        users.find((user) => user.email === player.account_email)?.id ?? null,
-    }));
-  } else {
-    if (linkedResult.error) throw linkedResult.error;
-    linked = linkedResult.data.map((player) => ({
-      ...player,
-      account_email: null,
-    }));
-  }
+  if (playersResult.error) throw playersResult.error;
 
-  const linkedIds = new Set(
-    linked
-      .filter((player) => player.id !== currentPlayerId)
-      .map((player) => player.app_user_id)
-      .filter((id): id is string => Boolean(id)),
+  const userById = new Map(users.map((user) => [user.id, user]));
+  const playerNameByAppUserId = new Map(
+    playersResult.data.map((player) => [player.app_user_id, player.name]),
   );
 
-  return users
-    .filter((user) => !linkedIds.has(user.id))
-    .map((user) => ({
-      id: user.id,
-      email: user.email,
-      displayName: user.display_name,
-      role: user.role,
-    }));
+  return memberships.map((membership) => {
+    const user = userById.get(membership.app_user_id);
+    return {
+      membershipId: membership.id,
+      appUserId: membership.app_user_id,
+      email: user?.email ?? "unknown account",
+      displayName: user?.display_name ?? "",
+      role: membership.role,
+      linkedPlayerName:
+        playerNameByAppUserId.get(membership.app_user_id) ?? null,
+    };
+  });
+}
+
+export async function getWorkspaceInvitePreview(
+  token: string,
+): Promise<WorkspaceInvitePreview> {
+  const client = createServerClient();
+  if (!client) {
+    return { status: "missing", invitedEmail: null, expiresAt: null };
+  }
+
+  const tokenHash = createHash("sha256").update(token).digest("hex");
+  const { data, error } = await client
+    .from("workspace_invites")
+    .select("invited_email,status,expires_at")
+    .eq("token_hash", tokenHash)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) return { status: "missing", invitedEmail: null, expiresAt: null };
+  if (data.status === "pending" && new Date(data.expires_at) <= new Date()) {
+    return {
+      status: "expired",
+      invitedEmail: data.invited_email,
+      expiresAt: data.expires_at,
+    };
+  }
+
+  return {
+    status: data.status,
+    invitedEmail: data.invited_email,
+    expiresAt: data.expires_at,
+  };
 }
 
 export async function canViewPrivateData(
-  user: { id: string; email?: string; role: AppUserRole } | null,
+  user: {
+    id: string;
+    email?: string;
+    role: AppUserRole;
+    activeWorkspaceId?: string | null;
+  } | null,
 ) {
   const client = createServerClient();
   if (!client) return true;
   if (!user) return false;
-  if (user.role === "admin" || user.role === "super_admin") return true;
-
-  const { data, error } = await client
-    .from("players")
-    .select("id")
-    .eq("app_user_id", user.id)
-    .maybeSingle();
-  if (isUndefinedColumnError(error) && user.email) {
-    const { data: fallbackData, error: fallbackError } = await client
-      .from("players")
-      .select("id")
-      .eq("account_email", user.email)
-      .maybeSingle();
-    if (fallbackError) throw fallbackError;
-
-    return Boolean(fallbackData);
-  }
-  if (error) throw error;
-
-  return Boolean(data);
+  return Boolean(user.activeWorkspaceId);
 }
 
 function isUndefinedColumnError(error: { code?: string } | null) {
   return error?.code === "42703";
 }
 
-export async function listEvents(): Promise<EventSummary[]> {
+export async function listEvents(
+  workspaceId?: string | null,
+): Promise<EventSummary[]> {
   const client = createServerClient();
   if (!client) {
     return demoEvents.map((event) => ({
@@ -284,12 +344,14 @@ export async function listEvents(): Promise<EventSummary[]> {
         .length,
     }));
   }
+  if (!workspaceId) return [];
 
   const { data, error } = await client
     .from("events")
     .select(
       "id,name,venue,starts_at,status,event_players(count),matches(status)",
     )
+    .eq("workspace_id", workspaceId)
     .order("starts_at", { ascending: false });
   if (error) throw error;
 
@@ -311,17 +373,23 @@ export async function listEvents(): Promise<EventSummary[]> {
   });
 }
 
-export async function getEvent(eventId: string) {
+export async function getEvent(eventId: string, workspaceId?: string | null) {
   if (!isSupabaseConfigured() && eventId.startsWith("demo-event")) {
     return { ...demoEvent, id: eventId };
   }
 
   const client = createServerClient();
   if (!client) return null;
+  if (!workspaceId) return null;
 
   const [{ data: event, error: eventError }, playersResult, roundsResult] =
     await Promise.all([
-      client.from("events").select("*").eq("id", eventId).single(),
+      client
+        .from("events")
+        .select("*")
+        .eq("id", eventId)
+        .eq("workspace_id", workspaceId)
+        .single(),
       client
         .from("event_players")
         .select("*")
@@ -427,9 +495,11 @@ export async function getEvent(eventId: string) {
 
 export async function getEventFormInitialValues(
   eventId: string,
+  workspaceId?: string | null,
 ): Promise<EventFormInitialValues | null> {
   const client = createServerClient();
   if (!client) return null;
+  if (!workspaceId) return null;
 
   const [{ data: event, error: eventError }, playersResult, roundsResult] =
     await Promise.all([
@@ -437,6 +507,7 @@ export async function getEventFormInitialValues(
         .from("events")
         .select("name,venue,starts_at,round_minutes,break_minutes,notes")
         .eq("id", eventId)
+        .eq("workspace_id", workspaceId)
         .single(),
       client
         .from("event_players")
@@ -489,7 +560,7 @@ export async function getEventFormInitialValues(
   };
 }
 
-export async function getHistoricalPlayerStats() {
+export async function getHistoricalPlayerStats(workspaceId?: string | null) {
   const client = createServerClient();
   if (!client) {
     return sortCareerRows(
@@ -504,14 +575,27 @@ export async function getHistoricalPlayerStats() {
       })),
     );
   }
+  if (!workspaceId) return [];
+
+  const { data: workspaceEvents, error: workspaceEventsError } = await client
+    .from("events")
+    .select("id")
+    .eq("workspace_id", workspaceId);
+  if (workspaceEventsError) throw workspaceEventsError;
+  const eventIds = workspaceEvents.map((event) => event.id);
+  if (!eventIds.length) return [];
 
   const [snapshotsResult, matchesResult] = await Promise.all([
-    client.from("event_players").select("id,player_id,name_snapshot,event_id"),
+    client
+      .from("event_players")
+      .select("id,player_id,name_snapshot,event_id")
+      .in("event_id", eventIds),
     client
       .from("matches")
       .select(
         "event_id,team_one_player_one_id,team_one_player_two_id,team_two_player_one_id,team_two_player_two_id,team_one_score,team_two_score",
       )
+      .in("event_id", eventIds)
       .eq("status", "completed"),
   ]);
   if (snapshotsResult.error) throw snapshotsResult.error;
