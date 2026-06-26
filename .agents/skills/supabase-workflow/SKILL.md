@@ -15,3 +15,5 @@ description: Use for Supabase schema, migrations, seed data, generated types, an
 8. Enable RLS on exposed tables and keep the unauthenticated access model explicit and easy to replace with user policies later.
 9. Preserve event-player name and rating snapshots even when reusable player records change.
 10. Verify changes with a real query after applying them.
+11. Do not apply pull-request migrations to production Supabase. PR schema changes must be validated with local Supabase or the migration-validation GitHub Action.
+12. Production migrations are applied from GitHub Actions on `push` to `main`. Keep migrations backward-compatible so app deploys and schema deploys can complete safely even if their timing overlaps.
