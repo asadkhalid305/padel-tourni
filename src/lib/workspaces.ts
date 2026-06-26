@@ -30,6 +30,13 @@ export async function ensureDefaultWorkspaceForUser(
 
     if (preferredMembershipError) throw preferredMembershipError;
     if (preferredMembership) {
+      const repairedMembership = await repairOwnerlessSeedWorkspaceForUser(
+        client,
+        user,
+        preferredMembership,
+      );
+      if (repairedMembership) return repairedMembership;
+
       await ensureWorkspaceMemberPlayer(
         client,
         preferredMembership.workspace_id,
@@ -60,6 +67,13 @@ export async function ensureDefaultWorkspaceForUser(
 
   if (existingMembershipError) throw existingMembershipError;
   if (existingMembership) {
+    const repairedMembership = await repairOwnerlessSeedWorkspaceForUser(
+      client,
+      user,
+      existingMembership,
+    );
+    if (repairedMembership) return repairedMembership;
+
     await ensureWorkspaceMemberPlayer(
       client,
       existingMembership.workspace_id,
@@ -134,6 +148,14 @@ async function joinLinkedPlayerWorkspaceForUser(
   if (linkedPlayerError) throw linkedPlayerError;
   if (!linkedPlayer?.workspace_id) return null;
 
+  const { data: workspace, error: workspaceError } = await client
+    .from("workspaces")
+    .select("personal_owner_app_user_id")
+    .eq("id", linkedPlayer.workspace_id)
+    .maybeSingle();
+  if (workspaceError) throw workspaceError;
+  if (!workspace?.personal_owner_app_user_id) return null;
+
   const { data: membership, error: insertMembershipError } = await client
     .from("workspace_memberships")
     .insert({
@@ -150,6 +172,58 @@ async function joinLinkedPlayerWorkspaceForUser(
   return {
     workspaceId: membership.workspace_id,
     role: membership.role,
+  };
+}
+
+async function repairOwnerlessSeedWorkspaceForUser(
+  client: SupabaseClient<Database>,
+  user: { id: string; displayName: string; email: string },
+  membership: { workspace_id: string; role: WorkspaceRole },
+): Promise<WorkspaceMembership | null> {
+  if (membership.role !== "member") return null;
+
+  const { data: workspace, error: workspaceError } = await client
+    .from("workspaces")
+    .select("id,personal_owner_app_user_id")
+    .eq("id", membership.workspace_id)
+    .maybeSingle();
+  if (workspaceError) throw workspaceError;
+  if (!workspace || workspace.personal_owner_app_user_id) return null;
+
+  const { data: linkedPlayer, error: linkedPlayerError } = await client
+    .from("players")
+    .select("workspace_id")
+    .eq("workspace_id", membership.workspace_id)
+    .eq("account_email", user.email)
+    .limit(1)
+    .maybeSingle();
+  if (linkedPlayerError) throw linkedPlayerError;
+  if (!linkedPlayer) return null;
+
+  const { error: updateWorkspaceError } = await client
+    .from("workspaces")
+    .update({
+      name: defaultWorkspaceName(user),
+      personal_owner_app_user_id: user.id,
+    })
+    .eq("id", workspace.id);
+  if (updateWorkspaceError) throw updateWorkspaceError;
+
+  const { data: repairedMembership, error: updateMembershipError } =
+    await client
+      .from("workspace_memberships")
+      .update({ role: "owner" })
+      .eq("workspace_id", workspace.id)
+      .eq("app_user_id", user.id)
+      .select("workspace_id,role")
+      .single();
+  if (updateMembershipError) throw updateMembershipError;
+
+  await ensureWorkspaceMemberPlayer(client, workspace.id, user);
+
+  return {
+    workspaceId: repairedMembership.workspace_id,
+    role: repairedMembership.role,
   };
 }
 
