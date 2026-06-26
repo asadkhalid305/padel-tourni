@@ -823,5 +823,10 @@ describe("RBAC server actions", () => {
       ok: true,
       message: "Final standings emails: 1 sent.",
     });
+    expect(emailMocks.deliverFinalStandingsEmails).toHaveBeenCalledWith({
+      client: expect.any(Object),
+      workspaceId: "workspace-1",
+      eventId: "00000000-0000-4000-8000-000000000099",
+    });
   });
 });

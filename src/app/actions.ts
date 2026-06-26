@@ -1263,7 +1263,6 @@ export async function retryFinalStandingsEmails(
       client,
       workspaceId: adminUser.activeWorkspaceId,
       eventId: parsed.data,
-      retryFailedOnly: true,
     });
     revalidatePath(`/events/${parsed.data}`);
     return {
