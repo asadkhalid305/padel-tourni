@@ -276,6 +276,7 @@ export async function deliverFinalStandingsEmails(options: {
       event: context.event,
       recipient: matchingRecipient,
       standings,
+      workspaceId: options.workspaceId,
     });
 
     try {
@@ -500,14 +501,21 @@ function renderFinalStandingsEmail(options: {
   event: EventRow;
   recipient: Recipient;
   standings: Standing[];
+  workspaceId: string;
 }) {
-  const { event, recipient, standings } = options;
+  const { event, recipient, standings, workspaceId } = options;
   const subject = `${event.name} final standings`;
-  const appOrigin = (process.env.NEXT_PUBLIC_APP_ORIGIN ?? "http://localhost:3100")
+  const appOrigin = (
+    process.env.NEXT_PUBLIC_APP_ORIGIN ?? "http://localhost:3100"
+  )
     .trim()
     .replace(/\/+$/, "");
-  const standingsUrl = `${appOrigin}/events/${event.id}?view=standings`;
-  const historyUrl = `${appOrigin}/history`;
+  const standingsUrl = `${appOrigin}/events/${
+    event.id
+  }?${new URLSearchParams({ view: "standings", workspaceId })}`;
+  const historyUrl = `${appOrigin}/history?${new URLSearchParams({
+    workspaceId,
+  })}`;
   const dateLabel = new Intl.DateTimeFormat("en", {
     dateStyle: "medium",
     timeStyle: "short",

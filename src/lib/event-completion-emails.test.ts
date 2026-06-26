@@ -70,6 +70,7 @@ describe("final standings email links", () => {
         recipientEmail: "asad@example.com",
         recipientName: "Asad Ullah Khalid",
       },
+      workspaceId: "90000000-0000-4000-8000-000000000001",
       standings: [
         {
           rank: 1,
@@ -89,16 +90,16 @@ describe("final standings email links", () => {
     });
 
     expect(rendered.html).toContain(
-      'href="https://padel.asadullahkhalid.com/events/event-123?view=standings"',
+      'href="https://padel.asadullahkhalid.com/events/event-123?view=standings&amp;workspaceId=90000000-0000-4000-8000-000000000001"',
     );
     expect(rendered.html).toContain(
-      'href="https://padel.asadullahkhalid.com/history"',
+      'href="https://padel.asadullahkhalid.com/history?workspaceId=90000000-0000-4000-8000-000000000001"',
     );
     expect(rendered.text).toContain(
-      "Open event standings: https://padel.asadullahkhalid.com/events/event-123?view=standings",
+      "Open event standings: https://padel.asadullahkhalid.com/events/event-123?view=standings&workspaceId=90000000-0000-4000-8000-000000000001",
     );
     expect(rendered.text).toContain(
-      "View all-time leaderboard: https://padel.asadullahkhalid.com/history",
+      "View all-time leaderboard: https://padel.asadullahkhalid.com/history?workspaceId=90000000-0000-4000-8000-000000000001",
     );
   });
 });
