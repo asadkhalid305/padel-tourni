@@ -228,13 +228,12 @@ async function ensureLinkedPlayerWorkspaceMemberships(
     }));
   if (!memberships.length) return;
 
-  const { error } = await client.from("workspace_memberships").upsert(
-    memberships,
-    {
+  const { error } = await client
+    .from("workspace_memberships")
+    .upsert(memberships, {
       onConflict: "workspace_id,app_user_id",
       ignoreDuplicates: true,
-    },
-  );
+    });
   if (error) throw error;
 }
 
@@ -306,12 +305,11 @@ async function adoptSeedWorkspaceForUser(
     seedPlayerQuery = seedPlayerQuery.eq("workspace_id", seededWorkspaceId);
   }
 
-  const { data: seededPlayer, error: seededPlayerError } =
-    await seedPlayerQuery
-      .is("app_user_id", null)
-      .order("created_at")
-      .limit(1)
-      .maybeSingle();
+  const { data: seededPlayer, error: seededPlayerError } = await seedPlayerQuery
+    .is("app_user_id", null)
+    .order("created_at")
+    .limit(1)
+    .maybeSingle();
   if (seededPlayerError) throw seededPlayerError;
   if (!seededPlayer?.workspace_id) return null;
 

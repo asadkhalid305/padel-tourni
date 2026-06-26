@@ -57,7 +57,9 @@ export async function proxy(request: NextRequest) {
   }
 
   if (user && pathname === "/login") {
-    return NextResponse.redirect(new URL(safeInternalPath(request), request.url));
+    return NextResponse.redirect(
+      new URL(safeInternalPath(request), request.url),
+    );
   }
 
   if (requestedWorkspaceId && UUID_PATTERN.test(requestedWorkspaceId)) {
