@@ -43,10 +43,14 @@ NEXT_PUBLIC_SUPABASE_URL
 SUPABASE_PUBLISHABLE_KEY
 SUPABASE_SECRET_KEY
 ADMIN_ROLE_API_SECRET
+RESEND_API_KEY
+RESEND_FROM_EMAIL
 CONTEXT7_API_KEY
 ```
 
 `SUPABASE_SECRET_KEY` and `ADMIN_ROLE_API_SECRET` are server-only and must never use a `NEXT_PUBLIC_` prefix. `CONTEXT7_API_KEY` is optional and only raises MCP rate limits.
+
+`RESEND_API_KEY` and `RESEND_FROM_EMAIL` are optional until final-standings emails are enabled. Without them, tournament completion still succeeds and email deliveries remain pending for retry once configured.
 
 ## Supabase
 

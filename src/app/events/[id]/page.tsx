@@ -223,6 +223,7 @@ export default async function EventPage({
                   eventId={event.id}
                   canComplete={canCompleteCurrentEvent}
                   canDelete={canDeleteCurrentEvent}
+                  canRetryEmails={Boolean(event.emailDeliverySummary?.canRetry)}
                   showDelete={event.status === "scheduled"}
                 />
               </div>
@@ -330,6 +331,36 @@ export default async function EventPage({
                 : diagnostics.issues.join(" ")}
             </div>
           </Card>
+          {canManage && event.status === "completed" ? (
+            <Card>
+              <div className="flex items-center gap-2">
+                <CircleCheckBig size={19} className="text-[var(--green)]" />
+                <h2 className="text-xl font-black">Standings emails</h2>
+              </div>
+              <div className="mt-5 grid grid-cols-2 gap-3">
+                {[
+                  ["Sent", event.emailDeliverySummary?.sent ?? 0],
+                  ["Failed", event.emailDeliverySummary?.failed ?? 0],
+                  ["Pending", event.emailDeliverySummary?.pending ?? 0],
+                  ["Skipped", event.emailDeliverySummary?.skipped ?? 0],
+                ].map(([label, value]) => (
+                  <div key={label} className="rounded-2xl bg-slate-50 p-4">
+                    <strong className="block text-2xl font-black text-[var(--ink)]">
+                      {value}
+                    </strong>
+                    <span className="text-xs font-semibold text-slate-500">
+                      {label}
+                    </span>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-4 rounded-xl bg-slate-50 p-4 text-sm leading-6 text-slate-600">
+                {event.emailDeliverySummary?.isConfigured
+                  ? "Emails use the configured Resend sender."
+                  : "Resend is not configured yet. Deliveries stay pending until the server env vars are set."}
+              </div>
+            </Card>
+          ) : null}
           {drawTransparencyCard}
         </div>
       ) : null}

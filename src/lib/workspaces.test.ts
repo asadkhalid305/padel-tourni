@@ -120,6 +120,158 @@ describe("workspace foundations", () => {
     });
   });
 
+  it("adopts an ownerless seeded workspace for the matching login email", async () => {
+    const updateWorkspace = vi.fn(() => ({
+      eq: vi.fn().mockResolvedValue({ error: null }),
+    }));
+    const updatePlayer = vi.fn(() => ({
+      eq: vi.fn(() => ({
+        eq: vi.fn().mockResolvedValue({ error: null }),
+      })),
+    }));
+    const insertMembership = vi.fn(() => ({
+      select: vi.fn(() => ({
+        single: vi.fn().mockResolvedValue({
+          data: { workspace_id: "seed-workspace", role: "owner" },
+          error: null,
+        }),
+      })),
+    }));
+    const insertPlayer = vi.fn().mockResolvedValue({ error: null });
+    const client = {
+      from: vi.fn((table: string) => {
+        if (table === "workspace_memberships") {
+          return {
+            select: vi.fn(() => ({
+              eq: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  maybeSingle: vi.fn().mockResolvedValue({
+                    data: null,
+                    error: null,
+                  }),
+                })),
+                order: vi.fn(() => ({
+                  limit: vi.fn(() => ({
+                    maybeSingle: vi.fn().mockResolvedValue({
+                      data: null,
+                      error: null,
+                    }),
+                  })),
+                })),
+                limit: vi.fn(() => ({
+                  maybeSingle: vi.fn().mockResolvedValue({
+                    data: null,
+                    error: null,
+                  }),
+                })),
+              })),
+            })),
+            insert: insertMembership,
+          };
+        }
+        if (table === "players") {
+          return {
+            select: vi.fn((columns: string) => {
+              if (columns === "workspace_id") {
+                return {
+                  eq: vi.fn(() => ({
+                    is: vi.fn(() => ({
+                      order: vi.fn(() => ({
+                        limit: vi.fn(() => ({
+                          maybeSingle: vi.fn().mockResolvedValue({
+                            data: { workspace_id: "seed-workspace" },
+                            error: null,
+                          }),
+                        })),
+                      })),
+                    })),
+                  })),
+                };
+              }
+              if (columns === "id,name,account_email") {
+                return {
+                  eq: vi.fn(() => ({
+                    eq: vi.fn(() => ({
+                      maybeSingle: vi.fn().mockResolvedValue({
+                        data: null,
+                        error: null,
+                      }),
+                    })),
+                  })),
+                };
+              }
+              if (columns === "id") {
+                return {
+                  eq: vi.fn(() => ({
+                    eq: vi.fn(() => ({
+                      maybeSingle: vi.fn().mockResolvedValue({
+                        data: { id: "seed-player-1" },
+                        error: null,
+                      }),
+                    })),
+                  })),
+                };
+              }
+
+              return {
+                eq: vi.fn().mockResolvedValue({ data: [], error: null }),
+              };
+            }),
+            update: updatePlayer,
+            insert: insertPlayer,
+          };
+        }
+        if (table === "workspaces") {
+          return {
+            select: vi.fn(() => ({
+              eq: vi.fn(() => ({
+                maybeSingle: vi.fn().mockResolvedValue({
+                  data: {
+                    id: "seed-workspace",
+                    personal_owner_app_user_id: null,
+                  },
+                  error: null,
+                }),
+              })),
+            })),
+            update: updateWorkspace,
+          };
+        }
+
+        return {
+          insert: vi.fn(),
+        };
+      }),
+    };
+
+    await expect(
+      ensureDefaultWorkspaceForUser(client as never, {
+        id: "user-1",
+        email: "owner@example.com",
+        displayName: "Owner",
+      }),
+    ).resolves.toEqual({
+      workspaceId: "seed-workspace",
+      role: "owner",
+    });
+
+    expect(updateWorkspace).toHaveBeenCalledWith({
+      name: "Owner's club",
+      personal_owner_app_user_id: "user-1",
+    });
+    expect(insertMembership).toHaveBeenCalledWith({
+      workspace_id: "seed-workspace",
+      app_user_id: "user-1",
+      role: "owner",
+    });
+    expect(insertPlayer).not.toHaveBeenCalled();
+    expect(updatePlayer).toHaveBeenCalledWith({
+      name: "Owner",
+      account_email: "owner@example.com",
+      app_user_id: "user-1",
+    });
+  });
+
   it("lists the user's workspace memberships with display names", async () => {
     const membershipUserFilter = vi.fn(() => ({
       order: vi.fn().mockResolvedValue({
@@ -331,6 +483,21 @@ function mockWorkspaceClient(options?: {
       if (table === "players") {
         return {
           select: vi.fn((columns: string) => {
+            if (columns === "workspace_id") {
+              return {
+                eq: vi.fn(() => ({
+                  is: vi.fn(() => ({
+                    order: vi.fn(() => ({
+                      limit: vi.fn(() => ({
+                        maybeSingle: vi
+                          .fn()
+                          .mockResolvedValue({ data: null, error: null }),
+                      })),
+                    })),
+                  })),
+                })),
+              };
+            }
             if (columns === "id,name,account_email") {
               return {
                 eq: vi.fn(() => ({
@@ -363,6 +530,12 @@ function mockWorkspaceClient(options?: {
       }
 
       return {
+        select: vi.fn(() => ({
+          eq: vi.fn(() => ({
+            maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+          })),
+        })),
+        update: vi.fn(),
         insert: insertWorkspace,
       };
     }),

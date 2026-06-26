@@ -4,7 +4,12 @@ import { CheckCircle2, Copy, Pencil, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useActionState, useState } from "react";
 
-import { completeEvent, deleteEvent, type ActionState } from "@/app/actions";
+import {
+  completeEvent,
+  deleteEvent,
+  retryFinalStandingsEmails,
+  type ActionState,
+} from "@/app/actions";
 import { PendingSubmitButton } from "@/components/pending-submit-button";
 import { Button } from "@/components/ui";
 
@@ -15,11 +20,13 @@ export function EventAdminActions({
   eventId,
   canComplete,
   canDelete,
+  canRetryEmails,
   showDelete,
 }: {
   eventId: string;
   canComplete: boolean;
   canDelete: boolean;
+  canRetryEmails: boolean;
   showDelete: boolean;
 }) {
   const [deleteState, deleteAction] = useActionState(deleteEvent, initialState);
@@ -27,9 +34,18 @@ export function EventAdminActions({
     completeEvent,
     initialState,
   );
+  const [retryState, retryAction] = useActionState(
+    retryFinalStandingsEmails,
+    initialState,
+  );
   const [confirmation, setConfirmation] = useState<Confirmation>(null);
-  const message = completeState.message || deleteState.message;
-  const ok = completeState.message ? completeState.ok : deleteState.ok;
+  const message =
+    completeState.message || retryState.message || deleteState.message;
+  const ok = completeState.message
+    ? completeState.ok
+    : retryState.message
+      ? retryState.ok
+      : deleteState.ok;
 
   return (
     <div className="flex flex-wrap items-center gap-2">
@@ -56,6 +72,14 @@ export function EventAdminActions({
           <CheckCircle2 size={17} />
           Complete tournament
         </Button>
+      ) : null}
+      {canRetryEmails ? (
+        <form action={retryAction}>
+          <input type="hidden" name="eventId" value={eventId} />
+          <PendingSubmitButton variant="ghost" pendingLabel="Retrying...">
+            Retry standings emails
+          </PendingSubmitButton>
+        </form>
       ) : null}
       {showDelete && canDelete ? (
         <Button

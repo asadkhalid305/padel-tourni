@@ -1,5 +1,10 @@
 begin;
 
+-- Ownerless seed workspace claimed on first login by the player with
+-- `account_email = 'asadkhalid305@gmail.com'`.
+delete from public.workspace_memberships
+where workspace_id = '90000000-0000-4000-8000-000000000001';
+
 alter table public.matches disable trigger matches_protect_completed;
 
 delete from public.events
@@ -13,6 +18,9 @@ where id in (
 );
 
 alter table public.matches enable trigger matches_protect_completed;
+
+delete from public.workspaces
+where id = '90000000-0000-4000-8000-000000000001';
 
 delete from public.players
 where id in (
@@ -28,27 +36,47 @@ where id in (
   '10000000-0000-0000-0000-000000000010',
   '10000000-0000-0000-0000-000000000011',
   '10000000-0000-0000-0000-000000000012',
-  '10000000-0000-0000-0000-000000000013'
+  '10000000-0000-0000-0000-000000000013',
+  '10000000-0000-4000-8000-000000000014'
 );
 
-insert into public.players (id, name, rating, is_active, account_email)
-values
-  ('10000000-0000-4000-8000-000000000001', 'Maya Fischer', 7.5, true, null),
-  ('10000000-0000-4000-8000-000000000002', 'Noah Becker', 6.0, true, null),
-  ('10000000-0000-4000-8000-000000000003', 'Sofia Keller', 8.0, true, null),
-  ('10000000-0000-4000-8000-000000000004', 'Leon Weber', 5.5, true, null),
-  ('10000000-0000-4000-8000-000000000005', 'Amira Wagner', 7.0, true, null),
-  ('10000000-0000-4000-8000-000000000006', 'Elias Hoffmann', 6.5, true, null),
-  ('10000000-0000-4000-8000-000000000007', 'Nina Bauer', 5.0, true, null),
-  ('10000000-0000-4000-8000-000000000008', 'Jonas Richter', 8.5, true, null),
-  ('10000000-0000-4000-8000-000000000009', 'Lina Schmitt', 6.0, true, null),
-  ('10000000-0000-4000-8000-000000000010', 'Omar Haddad', 7.2, true, null),
-  ('10000000-0000-4000-8000-000000000011', 'Clara Vogel', 4.8, true, null),
-  ('10000000-0000-4000-8000-000000000012', 'Ben Schneider', 5.9, true, null),
-  ('10000000-0000-4000-8000-000000000013', 'Tara Meier', 6.8, false, null),
-  ('10000000-0000-4000-8000-000000000014', 'Asad Ullah Khalid', 6.0, true, 'asadkhalid305@gmail.com')
+insert into public.workspaces (id, name, personal_owner_app_user_id)
+values (
+  '90000000-0000-4000-8000-000000000001',
+  'Asad Ullah Khalid seed club',
+  null
+)
 on conflict (id) do update
 set
+  name = excluded.name,
+  personal_owner_app_user_id = excluded.personal_owner_app_user_id;
+
+insert into public.players (
+  id,
+  workspace_id,
+  name,
+  rating,
+  is_active,
+  account_email
+)
+values
+  ('10000000-0000-4000-8000-000000000001', '90000000-0000-4000-8000-000000000001', 'Maya Fischer', 7.5, true, null),
+  ('10000000-0000-4000-8000-000000000002', '90000000-0000-4000-8000-000000000001', 'Noah Becker', 6.0, true, null),
+  ('10000000-0000-4000-8000-000000000003', '90000000-0000-4000-8000-000000000001', 'Sofia Keller', 8.0, true, null),
+  ('10000000-0000-4000-8000-000000000004', '90000000-0000-4000-8000-000000000001', 'Leon Weber', 5.5, true, null),
+  ('10000000-0000-4000-8000-000000000005', '90000000-0000-4000-8000-000000000001', 'Amira Wagner', 7.0, true, null),
+  ('10000000-0000-4000-8000-000000000006', '90000000-0000-4000-8000-000000000001', 'Elias Hoffmann', 6.5, true, null),
+  ('10000000-0000-4000-8000-000000000007', '90000000-0000-4000-8000-000000000001', 'Nina Bauer', 5.0, true, null),
+  ('10000000-0000-4000-8000-000000000008', '90000000-0000-4000-8000-000000000001', 'Jonas Richter', 8.5, true, null),
+  ('10000000-0000-4000-8000-000000000009', '90000000-0000-4000-8000-000000000001', 'Lina Schmitt', 6.0, true, null),
+  ('10000000-0000-4000-8000-000000000010', '90000000-0000-4000-8000-000000000001', 'Omar Haddad', 7.2, true, null),
+  ('10000000-0000-4000-8000-000000000011', '90000000-0000-4000-8000-000000000001', 'Clara Vogel', 4.8, true, null),
+  ('10000000-0000-4000-8000-000000000012', '90000000-0000-4000-8000-000000000001', 'Ben Schneider', 5.9, true, null),
+  ('10000000-0000-4000-8000-000000000013', '90000000-0000-4000-8000-000000000001', 'Tara Meier', 6.8, false, null),
+  ('10000000-0000-4000-8000-000000000014', '90000000-0000-4000-8000-000000000001', 'Asad Ullah Khalid', 6.0, true, 'asadkhalid305@gmail.com')
+on conflict (id) do update
+set
+  workspace_id = excluded.workspace_id,
   name = excluded.name,
   rating = excluded.rating,
   is_active = excluded.is_active,
@@ -56,6 +84,7 @@ set
 
 insert into public.events (
   id,
+  workspace_id,
   name,
   venue,
   starts_at,
@@ -68,6 +97,7 @@ insert into public.events (
 values
   (
     '20000000-0000-4000-8000-000000000001',
+    '90000000-0000-4000-8000-000000000001',
     'Friday Ladder Warmup',
     'Racket Club Kreuzberg',
     now() + interval '7 days',
@@ -79,6 +109,7 @@ values
   ),
   (
     '20000000-0000-4000-8000-000000000002',
+    '90000000-0000-4000-8000-000000000001',
     'Club Night Live Courts',
     'PadelBox Mitte',
     now() - interval '45 minutes',
@@ -90,6 +121,7 @@ values
   ),
   (
     '20000000-0000-4000-8000-000000000003',
+    '90000000-0000-4000-8000-000000000001',
     'May Masters Finals',
     'Tempelhofer Padelhalle',
     now() - interval '14 days',
@@ -98,7 +130,18 @@ values
     20,
     5,
     'Completed seed event for locked scores, standings, and history.'
-  );
+  )
+on conflict (id) do update
+set
+  workspace_id = excluded.workspace_id,
+  name = excluded.name,
+  venue = excluded.venue,
+  starts_at = excluded.starts_at,
+  status = excluded.status,
+  seed = excluded.seed,
+  round_minutes = excluded.round_minutes,
+  break_minutes = excluded.break_minutes,
+  notes = excluded.notes;
 
 insert into public.event_players (
   id,

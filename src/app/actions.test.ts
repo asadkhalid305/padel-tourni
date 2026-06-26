@@ -6,6 +6,10 @@ const supabaseMocks = vi.hoisted(() => ({
   requireWorkspaceAdminUser: vi.fn(),
 }));
 
+const emailMocks = vi.hoisted(() => ({
+  deliverFinalStandingsEmails: vi.fn(),
+}));
+
 const headerMocks = vi.hoisted(() => ({
   cookies: vi.fn(),
   headers: vi.fn(),
@@ -34,11 +38,17 @@ vi.mock("@/lib/supabase/server", () => ({
   requireWorkspaceAdminUser: supabaseMocks.requireWorkspaceAdminUser,
 }));
 
+vi.mock("@/lib/event-completion-emails", () => ({
+  deliverFinalStandingsEmails: emailMocks.deliverFinalStandingsEmails,
+}));
+
 import {
+  completeEvent,
   acceptWorkspaceInvite,
   createWorkspaceInvite,
   deletePlayer,
   removeWorkspaceMember,
+  retryFinalStandingsEmails,
   savePlayer,
   switchActiveWorkspace,
 } from "@/app/actions";
@@ -48,6 +58,7 @@ describe("RBAC server actions", () => {
     supabaseMocks.createServerClient.mockReset();
     supabaseMocks.getAuthenticatedUser.mockReset();
     supabaseMocks.requireWorkspaceAdminUser.mockReset();
+    emailMocks.deliverFinalStandingsEmails.mockReset();
     headerMocks.cookies.mockReset();
     headerMocks.headers.mockReset();
   });
@@ -652,5 +663,120 @@ describe("RBAC server actions", () => {
       message: "You cannot remove yourself.",
     });
     expect(deleteMembership).not.toHaveBeenCalled();
+  });
+
+  it("completes the tournament even when standings emails fail", async () => {
+    const cancelScheduledMatches = vi.fn(() => ({
+      eq: vi.fn(() => ({
+        eq: vi.fn().mockResolvedValue({ error: null }),
+      })),
+    }));
+    const completeEventRow = vi.fn(() => ({
+      eq: vi.fn(() => ({
+        eq: vi.fn().mockResolvedValue({ error: null }),
+      })),
+    }));
+    supabaseMocks.requireWorkspaceAdminUser.mockResolvedValue({
+      id: "owner-user",
+      email: "owner@example.com",
+      displayName: "Owner",
+      role: "member",
+      activeWorkspaceId: "workspace-1",
+      activeWorkspaceRole: "owner",
+    });
+    emailMocks.deliverFinalStandingsEmails.mockRejectedValue(
+      new Error("provider down"),
+    );
+    supabaseMocks.createServerClient.mockReturnValue({
+      from: vi.fn((table: string) => {
+        if (table === "events") {
+          return {
+            select: vi.fn(() => ({
+              eq: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  single: vi.fn().mockResolvedValue({
+                    data: {
+                      status: "scheduled",
+                      starts_at: "2026-06-25T10:00:00.000Z",
+                    },
+                    error: null,
+                  }),
+                })),
+              })),
+            })),
+            update: completeEventRow,
+          };
+        }
+
+        return {
+          select: vi.fn(() => ({
+            eq: vi.fn().mockResolvedValue({
+              data: [{ status: "completed" }, { status: "scheduled" }],
+              error: null,
+            }),
+          })),
+          update: cancelScheduledMatches,
+        };
+      }),
+    });
+    const formData = new FormData();
+    formData.set("eventId", "00000000-0000-4000-8000-000000000099");
+
+    const result = await completeEvent({ ok: false, message: "" }, formData);
+
+    expect(result.ok).toBe(true);
+    expect(result.message).toContain(
+      "Tournament completed. Unplayed matches were marked cancelled.",
+    );
+    expect(result.message).toContain(
+      "Final standings emails could not be processed: provider down",
+    );
+    expect(cancelScheduledMatches).toHaveBeenCalledWith({
+      status: "cancelled",
+    });
+    expect(completeEventRow).toHaveBeenCalledWith({ status: "completed" });
+    expect(emailMocks.deliverFinalStandingsEmails).toHaveBeenCalledWith({
+      client: expect.any(Object),
+      workspaceId: "workspace-1",
+      eventId: "00000000-0000-4000-8000-000000000099",
+    });
+  });
+
+  it("does not retry standings emails before an event is completed", async () => {
+    supabaseMocks.requireWorkspaceAdminUser.mockResolvedValue({
+      id: "owner-user",
+      email: "owner@example.com",
+      displayName: "Owner",
+      role: "member",
+      activeWorkspaceId: "workspace-1",
+      activeWorkspaceRole: "owner",
+    });
+    supabaseMocks.createServerClient.mockReturnValue({
+      from: vi.fn(() => ({
+        select: vi.fn(() => ({
+          eq: vi.fn(() => ({
+            eq: vi.fn(() => ({
+              single: vi.fn().mockResolvedValue({
+                data: { status: "live" },
+                error: null,
+              }),
+            })),
+          })),
+        })),
+      })),
+    });
+    const formData = new FormData();
+    formData.set("eventId", "00000000-0000-4000-8000-000000000099");
+
+    const result = await retryFinalStandingsEmails(
+      { ok: false, message: "" },
+      formData,
+    );
+
+    expect(result).toEqual({
+      ok: false,
+      message: "Final standings emails can only be retried after completion.",
+    });
+    expect(emailMocks.deliverFinalStandingsEmails).not.toHaveBeenCalled();
   });
 });
