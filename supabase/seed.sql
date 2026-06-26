@@ -1,7 +1,8 @@
 begin;
 
 -- Ownerless seed workspace claimed on first login by the player with
--- `account_email = 'asadkhalid305@gmail.com'`.
+-- `account_email = 'asadkhalid305@gmail.com'`. The projects account is linked
+-- as a member player in the same workspace for multi-account testing.
 delete from public.workspace_memberships
 where workspace_id = '90000000-0000-4000-8000-000000000001';
 
@@ -37,7 +38,8 @@ where id in (
   '10000000-0000-0000-0000-000000000011',
   '10000000-0000-0000-0000-000000000012',
   '10000000-0000-0000-0000-000000000013',
-  '10000000-0000-4000-8000-000000000014'
+  '10000000-0000-4000-8000-000000000014',
+  '10000000-0000-4000-8000-000000000015'
 );
 
 insert into public.workspaces (id, name, personal_owner_app_user_id)
@@ -73,7 +75,8 @@ values
   ('10000000-0000-4000-8000-000000000011', '90000000-0000-4000-8000-000000000001', 'Clara Vogel', 4.8, true, null),
   ('10000000-0000-4000-8000-000000000012', '90000000-0000-4000-8000-000000000001', 'Ben Schneider', 5.9, true, null),
   ('10000000-0000-4000-8000-000000000013', '90000000-0000-4000-8000-000000000001', 'Tara Meier', 6.8, false, null),
-  ('10000000-0000-4000-8000-000000000014', '90000000-0000-4000-8000-000000000001', 'Asad Ullah Khalid', 6.0, true, 'asadkhalid305@gmail.com')
+  ('10000000-0000-4000-8000-000000000014', '90000000-0000-4000-8000-000000000001', 'Asad Ullah Khalid', 6.0, true, 'asadkhalid305@gmail.com'),
+  ('10000000-0000-4000-8000-000000000015', '90000000-0000-4000-8000-000000000001', 'Asad Projects', 6.1, true, 'asadkhalid.projects@gmail.com')
 on conflict (id) do update
 set
   workspace_id = excluded.workspace_id,

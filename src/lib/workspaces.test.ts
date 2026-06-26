@@ -272,6 +272,144 @@ describe("workspace foundations", () => {
     });
   });
 
+  it("joins an existing workspace when the user matches a linked player email", async () => {
+    const updatePlayer = vi.fn(() => ({
+      eq: vi.fn(() => ({
+        eq: vi.fn().mockResolvedValue({ error: null }),
+      })),
+    }));
+    const insertMembership = vi.fn(() => ({
+      select: vi.fn(() => ({
+        single: vi.fn().mockResolvedValue({
+          data: { workspace_id: "seed-workspace", role: "member" },
+          error: null,
+        }),
+      })),
+    }));
+    const insertPlayer = vi.fn().mockResolvedValue({ error: null });
+    const client = {
+      from: vi.fn((table: string) => {
+        if (table === "workspace_memberships") {
+          return {
+            select: vi.fn(() => ({
+              eq: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  maybeSingle: vi.fn().mockResolvedValue({
+                    data: null,
+                    error: null,
+                  }),
+                })),
+                order: vi.fn(() => ({
+                  limit: vi.fn(() => ({
+                    maybeSingle: vi.fn().mockResolvedValue({
+                      data: null,
+                      error: null,
+                    }),
+                  })),
+                })),
+              })),
+            })),
+            insert: insertMembership,
+          };
+        }
+        if (table === "players") {
+          return {
+            select: vi.fn((columns: string) => {
+              if (columns === "workspace_id") {
+                return {
+                  eq: vi.fn(() => ({
+                    is: vi.fn(() => ({
+                      order: vi.fn(() => ({
+                        limit: vi.fn(() => ({
+                          maybeSingle: vi.fn().mockResolvedValue({
+                            data: { workspace_id: "seed-workspace" },
+                            error: null,
+                          }),
+                        })),
+                      })),
+                    })),
+                  })),
+                };
+              }
+              if (columns === "id,name,account_email") {
+                return {
+                  eq: vi.fn(() => ({
+                    eq: vi.fn(() => ({
+                      maybeSingle: vi.fn().mockResolvedValue({
+                        data: null,
+                        error: null,
+                      }),
+                    })),
+                  })),
+                };
+              }
+              if (columns === "id") {
+                return {
+                  eq: vi.fn(() => ({
+                    eq: vi.fn(() => ({
+                      maybeSingle: vi.fn().mockResolvedValue({
+                        data: { id: "project-player" },
+                        error: null,
+                      }),
+                    })),
+                  })),
+                };
+              }
+
+              return {
+                eq: vi.fn().mockResolvedValue({ data: [], error: null }),
+              };
+            }),
+            update: updatePlayer,
+            insert: insertPlayer,
+          };
+        }
+        if (table === "workspaces") {
+          return {
+            select: vi.fn(() => ({
+              eq: vi.fn(() => ({
+                maybeSingle: vi.fn().mockResolvedValue({
+                  data: {
+                    id: "seed-workspace",
+                    personal_owner_app_user_id: "owner-user",
+                  },
+                  error: null,
+                }),
+              })),
+            })),
+          };
+        }
+
+        return {
+          insert: vi.fn(),
+        };
+      }),
+    };
+
+    await expect(
+      ensureDefaultWorkspaceForUser(client as never, {
+        id: "project-user",
+        email: "asadkhalid.projects@gmail.com",
+        displayName: "Asad Projects",
+      }),
+    ).resolves.toEqual({
+      workspaceId: "seed-workspace",
+      role: "member",
+    });
+
+    expect(insertMembership).toHaveBeenCalledWith({
+      workspace_id: "seed-workspace",
+      app_user_id: "project-user",
+      role: "member",
+    });
+    expect(insertPlayer).not.toHaveBeenCalled();
+    expect(updatePlayer).toHaveBeenCalledWith({
+      name: "Asad Projects",
+      account_email: "asadkhalid.projects@gmail.com",
+      app_user_id: "project-user",
+    });
+  });
+
   it("lists the user's workspace memberships with display names", async () => {
     const membershipUserFilter = vi.fn(() => ({
       order: vi.fn().mockResolvedValue({
@@ -484,17 +622,21 @@ function mockWorkspaceClient(options?: {
         return {
           select: vi.fn((columns: string) => {
             if (columns === "workspace_id") {
-              return {
-                eq: vi.fn(() => ({
-                  is: vi.fn(() => ({
-                    order: vi.fn(() => ({
-                      limit: vi.fn(() => ({
-                        maybeSingle: vi
-                          .fn()
-                          .mockResolvedValue({ data: null, error: null }),
-                      })),
+              const finishWorkspaceIdQuery = {
+                is: vi.fn(() => ({
+                  order: vi.fn(() => ({
+                    limit: vi.fn(() => ({
+                      maybeSingle: vi
+                        .fn()
+                        .mockResolvedValue({ data: null, error: null }),
                     })),
                   })),
+                })),
+              };
+              return {
+                eq: vi.fn(() => ({
+                  ...finishWorkspaceIdQuery,
+                  eq: vi.fn(() => finishWorkspaceIdQuery),
                 })),
               };
             }

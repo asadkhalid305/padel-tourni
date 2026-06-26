@@ -198,7 +198,6 @@ function formatDeliveryResult(result: {
   const parts = [`${result.sent} sent`];
   if (result.failed) parts.push(`${result.failed} failed`);
   if (result.pending) parts.push(`${result.pending} pending`);
-  if (result.skipped) parts.push(`${result.skipped} skipped`);
   return `Final standings emails: ${parts.join(", ")}.`;
 }
 

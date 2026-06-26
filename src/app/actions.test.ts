@@ -779,4 +779,49 @@ describe("RBAC server actions", () => {
     });
     expect(emailMocks.deliverFinalStandingsEmails).not.toHaveBeenCalled();
   });
+
+  it("does not include skipped player counts in standings email success messages", async () => {
+    supabaseMocks.requireWorkspaceAdminUser.mockResolvedValue({
+      id: "owner-user",
+      email: "owner@example.com",
+      displayName: "Owner",
+      role: "member",
+      activeWorkspaceId: "workspace-1",
+      activeWorkspaceRole: "owner",
+    });
+    emailMocks.deliverFinalStandingsEmails.mockResolvedValue({
+      sent: 1,
+      failed: 0,
+      pending: 0,
+      skipped: 12,
+      total: 1,
+      isConfigured: true,
+    });
+    supabaseMocks.createServerClient.mockReturnValue({
+      from: vi.fn(() => ({
+        select: vi.fn(() => ({
+          eq: vi.fn(() => ({
+            eq: vi.fn(() => ({
+              single: vi.fn().mockResolvedValue({
+                data: { status: "completed" },
+                error: null,
+              }),
+            })),
+          })),
+        })),
+      })),
+    });
+    const formData = new FormData();
+    formData.set("eventId", "00000000-0000-4000-8000-000000000099");
+
+    const result = await retryFinalStandingsEmails(
+      { ok: false, message: "" },
+      formData,
+    );
+
+    expect(result).toEqual({
+      ok: true,
+      message: "Final standings emails: 1 sent.",
+    });
+  });
 });

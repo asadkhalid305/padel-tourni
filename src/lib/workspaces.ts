@@ -40,6 +40,13 @@ export async function ensureDefaultWorkspaceForUser(
         role: preferredMembership.role,
       };
     }
+
+    const linkedPreferredMembership = await joinLinkedPlayerWorkspaceForUser(
+      client,
+      user,
+      preferredWorkspaceId,
+    );
+    if (linkedPreferredMembership) return linkedPreferredMembership;
   }
 
   const { data: existingMembership, error: existingMembershipError } =
@@ -69,6 +76,11 @@ export async function ensureDefaultWorkspaceForUser(
     return adoptedSeedWorkspace;
   }
 
+  const linkedWorkspace = await joinLinkedPlayerWorkspaceForUser(client, user);
+  if (linkedWorkspace) {
+    return linkedWorkspace;
+  }
+
   const { data: workspace, error: workspaceError } = await client
     .from("workspaces")
     .insert({
@@ -91,6 +103,48 @@ export async function ensureDefaultWorkspaceForUser(
     .single();
 
   if (membershipError) throw membershipError;
+  await ensureWorkspaceMemberPlayer(client, membership.workspace_id, user);
+
+  return {
+    workspaceId: membership.workspace_id,
+    role: membership.role,
+  };
+}
+
+async function joinLinkedPlayerWorkspaceForUser(
+  client: SupabaseClient<Database>,
+  user: { id: string; displayName: string; email: string },
+  preferredWorkspaceId?: string | null,
+): Promise<WorkspaceMembership | null> {
+  let linkedPlayerQuery = client
+    .from("players")
+    .select("workspace_id")
+    .eq("account_email", user.email);
+
+  if (preferredWorkspaceId) {
+    linkedPlayerQuery = linkedPlayerQuery.eq("workspace_id", preferredWorkspaceId);
+  }
+
+  const { data: linkedPlayer, error: linkedPlayerError } =
+    await linkedPlayerQuery
+      .is("app_user_id", null)
+      .order("created_at")
+      .limit(1)
+      .maybeSingle();
+  if (linkedPlayerError) throw linkedPlayerError;
+  if (!linkedPlayer?.workspace_id) return null;
+
+  const { data: membership, error: insertMembershipError } = await client
+    .from("workspace_memberships")
+    .insert({
+      workspace_id: linkedPlayer.workspace_id,
+      app_user_id: user.id,
+      role: "member",
+    })
+    .select("workspace_id,role")
+    .single();
+  if (insertMembershipError) throw insertMembershipError;
+
   await ensureWorkspaceMemberPlayer(client, membership.workspace_id, user);
 
   return {
