@@ -12,6 +12,7 @@ import type {
 } from "@/domain/types";
 import { demoEvent, demoEvents, demoPlayers } from "@/lib/demo-data";
 import { sortCareerRows, type CareerPlayerStats } from "@/lib/career-ranking";
+import { getEventEmailDeliverySummary } from "@/lib/event-completion-emails";
 import type { AppUserRole, WorkspaceRole } from "@/lib/roles";
 import {
   createServerClient,
@@ -375,7 +376,7 @@ export async function listEvents(
 
 export async function getEvent(eventId: string, workspaceId?: string | null) {
   if (!isSupabaseConfigured() && eventId.startsWith("demo-event")) {
-    return { ...demoEvent, id: eventId };
+    return { ...demoEvent, id: eventId, emailDeliverySummary: null };
   }
 
   const client = createServerClient();
@@ -411,6 +412,12 @@ export async function getEvent(eventId: string, workspaceId?: string | null) {
     name: player.name_snapshot,
     rating: Number(player.rating_snapshot),
   }));
+  const emailDeliverySummary = await getEventEmailDeliverySummary({
+    client,
+    workspaceId,
+    eventId,
+    rosterCount: players.length,
+  });
   const playerById = new Map(players.map((player) => [player.id, player]));
   const completedMatches: CompletedMatch[] = [];
   const rounds = roundsResult.data as unknown as RoundWithMatches[];
@@ -490,6 +497,7 @@ export async function getEvent(eventId: string, workspaceId?: string | null) {
     schedule,
     completedMatches,
     standings: calculateStandings(players, completedMatches),
+    emailDeliverySummary,
   };
 }
 

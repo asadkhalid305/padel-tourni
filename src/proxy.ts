@@ -2,6 +2,9 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
 const PUBLIC_PATHS = ["/login", "/auth/callback", "/invites"];
+const ACTIVE_WORKSPACE_COOKIE = "padeltour_active_workspace_id";
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -23,6 +26,11 @@ export async function proxy(request: NextRequest) {
   }
 
   let response = NextResponse.next({ request });
+  const requestedWorkspaceId = request.nextUrl.searchParams.get("workspaceId");
+  if (requestedWorkspaceId && UUID_PATTERN.test(requestedWorkspaceId)) {
+    request.cookies.set(ACTIVE_WORKSPACE_COOKIE, requestedWorkspaceId);
+  }
+
   const supabase = createServerClient(url, publishableKey, {
     cookies: {
       getAll() {
@@ -49,7 +57,16 @@ export async function proxy(request: NextRequest) {
   }
 
   if (user && pathname === "/login") {
-    return NextResponse.redirect(new URL("/", request.url));
+    return NextResponse.redirect(
+      new URL(safeInternalPath(request), request.url),
+    );
+  }
+
+  if (requestedWorkspaceId && UUID_PATTERN.test(requestedWorkspaceId)) {
+    response.cookies.set(ACTIVE_WORKSPACE_COOKIE, requestedWorkspaceId, {
+      sameSite: "lax",
+      path: "/",
+    });
   }
 
   return response;
@@ -57,8 +74,17 @@ export async function proxy(request: NextRequest) {
 
 function redirectToLogin(request: NextRequest) {
   const loginUrl = new URL("/login", request.url);
-  loginUrl.searchParams.set("next", request.nextUrl.pathname);
+  loginUrl.searchParams.set(
+    "next",
+    `${request.nextUrl.pathname}${request.nextUrl.search}`,
+  );
   return NextResponse.redirect(loginUrl);
+}
+
+function safeInternalPath(request: NextRequest) {
+  const next = request.nextUrl.searchParams.get("next") ?? "/";
+  if (!next.startsWith("/") || next.startsWith("//")) return "/";
+  return next;
 }
 
 export const config = {

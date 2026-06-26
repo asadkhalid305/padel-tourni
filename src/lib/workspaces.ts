@@ -14,22 +14,30 @@ export type UserWorkspaceMembership = WorkspaceMembership & {
   name: string;
 };
 
+const SEEDED_PERSONAL_WORKSPACE_IDS_BY_EMAIL = new Map([
+  ["asadkhalid305@gmail.com", "90000000-0000-4000-8000-000000000001"],
+  ["asadkhalid.projects@gmail.com", "90000000-0000-4000-8000-000000000002"],
+]);
+
 export async function ensureDefaultWorkspaceForUser(
   client: SupabaseClient<Database>,
   user: { id: string; displayName: string; email: string },
   preferredWorkspaceId?: string | null,
 ): Promise<WorkspaceMembership> {
   if (preferredWorkspaceId) {
-    const { data: preferredMembership, error: preferredMembershipError } =
-      await client
-        .from("workspace_memberships")
-        .select("workspace_id,role")
-        .eq("app_user_id", user.id)
-        .eq("workspace_id", preferredWorkspaceId)
-        .maybeSingle();
-
-    if (preferredMembershipError) throw preferredMembershipError;
+    const preferredMembership = await getWorkspaceMembership(
+      client,
+      user.id,
+      preferredWorkspaceId,
+    );
     if (preferredMembership) {
+      const repairedMembership = await repairOwnerlessSeedWorkspaceForUser(
+        client,
+        user,
+        preferredMembership,
+      );
+      if (repairedMembership) return repairedMembership;
+
       await ensureWorkspaceMemberPlayer(
         client,
         preferredMembership.workspace_id,
@@ -53,15 +61,65 @@ export async function ensureDefaultWorkspaceForUser(
 
   if (existingMembershipError) throw existingMembershipError;
   if (existingMembership) {
+    const repairedMembership = await repairOwnerlessSeedWorkspaceForUser(
+      client,
+      user,
+      existingMembership,
+    );
+    if (repairedMembership) return repairedMembership;
+
     await ensureWorkspaceMemberPlayer(
       client,
       existingMembership.workspace_id,
       user,
     );
+    await ensureLinkedPlayerWorkspaceMemberships(
+      client,
+      user,
+      existingMembership.workspace_id,
+    );
+    const preferredMembership = preferredWorkspaceId
+      ? await getWorkspaceMembership(client, user.id, preferredWorkspaceId)
+      : null;
+    if (preferredMembership) {
+      await ensureWorkspaceMemberPlayer(
+        client,
+        preferredMembership.workspace_id,
+        user,
+      );
+      return {
+        workspaceId: preferredMembership.workspace_id,
+        role: preferredMembership.role,
+      };
+    }
     return {
       workspaceId: existingMembership.workspace_id,
       role: existingMembership.role,
     };
+  }
+
+  const adoptedSeedWorkspace = await adoptSeedWorkspaceForUser(client, user);
+  if (adoptedSeedWorkspace) {
+    await ensureLinkedPlayerWorkspaceMemberships(
+      client,
+      user,
+      adoptedSeedWorkspace.workspaceId,
+    );
+    const preferredMembership = preferredWorkspaceId
+      ? await getWorkspaceMembership(client, user.id, preferredWorkspaceId)
+      : null;
+    if (preferredMembership) {
+      await ensureWorkspaceMemberPlayer(
+        client,
+        preferredMembership.workspace_id,
+        user,
+      );
+      return {
+        workspaceId: preferredMembership.workspace_id,
+        role: preferredMembership.role,
+      };
+    }
+    return adoptedSeedWorkspace;
   }
 
   const { data: workspace, error: workspaceError } = await client
@@ -87,10 +145,216 @@ export async function ensureDefaultWorkspaceForUser(
 
   if (membershipError) throw membershipError;
   await ensureWorkspaceMemberPlayer(client, membership.workspace_id, user);
+  await ensureLinkedPlayerWorkspaceMemberships(
+    client,
+    user,
+    membership.workspace_id,
+  );
+  const preferredMembership = preferredWorkspaceId
+    ? await getWorkspaceMembership(client, user.id, preferredWorkspaceId)
+    : null;
+  if (preferredMembership) {
+    await ensureWorkspaceMemberPlayer(
+      client,
+      preferredMembership.workspace_id,
+      user,
+    );
+    return {
+      workspaceId: preferredMembership.workspace_id,
+      role: preferredMembership.role,
+    };
+  }
 
   return {
     workspaceId: membership.workspace_id,
     role: membership.role,
+  };
+}
+
+async function getWorkspaceMembership(
+  client: SupabaseClient<Database>,
+  appUserId: string,
+  workspaceId: string,
+) {
+  const { data, error } = await client
+    .from("workspace_memberships")
+    .select("workspace_id,role")
+    .eq("app_user_id", appUserId)
+    .eq("workspace_id", workspaceId)
+    .maybeSingle();
+  if (error) throw error;
+  return data;
+}
+
+async function ensureLinkedPlayerWorkspaceMemberships(
+  client: SupabaseClient<Database>,
+  user: { id: string; displayName: string; email: string },
+  activeWorkspaceId: string,
+) {
+  const { data: linkedPlayers, error: linkedPlayersError } = await client
+    .from("players")
+    .select("workspace_id")
+    .eq("account_email", user.email);
+  if (linkedPlayersError) throw linkedPlayersError;
+
+  const workspaceIds = [
+    ...new Set(
+      (linkedPlayers ?? [])
+        .map((player) => player.workspace_id)
+        .filter(
+          (workspaceId): workspaceId is string =>
+            Boolean(workspaceId) && workspaceId !== activeWorkspaceId,
+        ),
+    ),
+  ];
+  if (!workspaceIds.length) return;
+
+  const { data: workspaces, error: workspacesError } = await client
+    .from("workspaces")
+    .select("id,personal_owner_app_user_id")
+    .in("id", workspaceIds);
+  if (workspacesError) throw workspacesError;
+
+  const memberships = workspaces
+    .filter(
+      (workspace) =>
+        workspace.personal_owner_app_user_id &&
+        workspace.personal_owner_app_user_id !== user.id,
+    )
+    .map((workspace) => ({
+      workspace_id: workspace.id,
+      app_user_id: user.id,
+      role: "member" as const,
+    }));
+  if (!memberships.length) return;
+
+  const { error } = await client
+    .from("workspace_memberships")
+    .upsert(memberships, {
+      onConflict: "workspace_id,app_user_id",
+      ignoreDuplicates: true,
+    });
+  if (error) throw error;
+}
+
+async function repairOwnerlessSeedWorkspaceForUser(
+  client: SupabaseClient<Database>,
+  user: { id: string; displayName: string; email: string },
+  membership: { workspace_id: string; role: WorkspaceRole },
+): Promise<WorkspaceMembership | null> {
+  if (membership.role !== "member") return null;
+
+  const { data: workspace, error: workspaceError } = await client
+    .from("workspaces")
+    .select("id,personal_owner_app_user_id")
+    .eq("id", membership.workspace_id)
+    .maybeSingle();
+  if (workspaceError) throw workspaceError;
+  if (!workspace || workspace.personal_owner_app_user_id) return null;
+
+  const { data: linkedPlayer, error: linkedPlayerError } = await client
+    .from("players")
+    .select("workspace_id")
+    .eq("workspace_id", membership.workspace_id)
+    .eq("account_email", user.email)
+    .limit(1)
+    .maybeSingle();
+  if (linkedPlayerError) throw linkedPlayerError;
+  if (!linkedPlayer) return null;
+
+  const { error: updateWorkspaceError } = await client
+    .from("workspaces")
+    .update({
+      name: defaultWorkspaceName(user),
+      personal_owner_app_user_id: user.id,
+    })
+    .eq("id", workspace.id);
+  if (updateWorkspaceError) throw updateWorkspaceError;
+
+  const { data: repairedMembership, error: updateMembershipError } =
+    await client
+      .from("workspace_memberships")
+      .update({ role: "owner" })
+      .eq("workspace_id", workspace.id)
+      .eq("app_user_id", user.id)
+      .select("workspace_id,role")
+      .single();
+  if (updateMembershipError) throw updateMembershipError;
+
+  await ensureWorkspaceMemberPlayer(client, workspace.id, user);
+
+  return {
+    workspaceId: repairedMembership.workspace_id,
+    role: repairedMembership.role,
+  };
+}
+
+async function adoptSeedWorkspaceForUser(
+  client: SupabaseClient<Database>,
+  user: { id: string; displayName: string; email: string },
+): Promise<WorkspaceMembership | null> {
+  let seedPlayerQuery = client
+    .from("players")
+    .select("workspace_id")
+    .eq("account_email", user.email);
+
+  const seededWorkspaceId = SEEDED_PERSONAL_WORKSPACE_IDS_BY_EMAIL.get(
+    user.email,
+  );
+  if (seededWorkspaceId) {
+    seedPlayerQuery = seedPlayerQuery.eq("workspace_id", seededWorkspaceId);
+  }
+
+  const { data: seededPlayer, error: seededPlayerError } = await seedPlayerQuery
+    .is("app_user_id", null)
+    .order("created_at")
+    .limit(1)
+    .maybeSingle();
+  if (seededPlayerError) throw seededPlayerError;
+  if (!seededPlayer?.workspace_id) return null;
+
+  const { data: workspace, error: workspaceError } = await client
+    .from("workspaces")
+    .select("id,personal_owner_app_user_id")
+    .eq("id", seededPlayer.workspace_id)
+    .maybeSingle();
+  if (workspaceError) throw workspaceError;
+  if (!workspace || workspace.personal_owner_app_user_id) return null;
+
+  const { data: membership, error: membershipError } = await client
+    .from("workspace_memberships")
+    .select("workspace_id")
+    .eq("workspace_id", workspace.id)
+    .limit(1)
+    .maybeSingle();
+  if (membershipError) throw membershipError;
+  if (membership) return null;
+
+  const { error: updateWorkspaceError } = await client
+    .from("workspaces")
+    .update({
+      name: defaultWorkspaceName(user),
+      personal_owner_app_user_id: user.id,
+    })
+    .eq("id", workspace.id);
+  if (updateWorkspaceError) throw updateWorkspaceError;
+
+  const { data: adoptedMembership, error: insertMembershipError } = await client
+    .from("workspace_memberships")
+    .insert({
+      workspace_id: workspace.id,
+      app_user_id: user.id,
+      role: "owner",
+    })
+    .select("workspace_id,role")
+    .single();
+  if (insertMembershipError) throw insertMembershipError;
+
+  await ensureWorkspaceMemberPlayer(client, workspace.id, user);
+
+  return {
+    workspaceId: adoptedMembership.workspace_id,
+    role: adoptedMembership.role,
   };
 }
 

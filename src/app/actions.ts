@@ -27,6 +27,7 @@ import {
   getAuthenticatedUser,
   requireWorkspaceAdminUser,
 } from "@/lib/supabase/server";
+import { deliverFinalStandingsEmails } from "@/lib/event-completion-emails";
 import { eventSchema, playerSchema, scoreSchema } from "@/lib/validation";
 import { requestOrigin } from "@/lib/request-origin";
 import { ensureWorkspaceMemberPlayer } from "@/lib/workspaces";
@@ -176,6 +177,28 @@ function safeInternalPath(value: FormDataEntryValue | null) {
   if (typeof value !== "string") return "/";
   if (!value.startsWith("/") || value.startsWith("//")) return "/";
   return value;
+}
+
+function formatDeliveryResult(result: {
+  sent: number;
+  failed: number;
+  pending: number;
+  skipped: number;
+  total: number;
+  isConfigured: boolean;
+}) {
+  if (!result.total && !result.skipped) {
+    return "No linked player emails were eligible for final standings.";
+  }
+
+  if (!result.isConfigured) {
+    return `Final standings emails were queued for ${result.total} linked players, but Resend is not configured yet.`;
+  }
+
+  const parts = [`${result.sent} sent`];
+  if (result.failed) parts.push(`${result.failed} failed`);
+  if (result.pending) parts.push(`${result.pending} pending`);
+  return `Final standings emails: ${parts.join(", ")}.`;
 }
 
 export async function savePlayer(
@@ -1182,13 +1205,79 @@ export async function completeEvent(
     return { ok: false, message: eventResult.error.message };
   }
 
+  let message = "Tournament completed. Unplayed matches were marked cancelled.";
+
+  try {
+    const deliveryResult = await deliverFinalStandingsEmails({
+      client,
+      workspaceId: adminUser.activeWorkspaceId,
+      eventId: parsed.data,
+    });
+    message = `${message} ${formatDeliveryResult(deliveryResult)}`;
+  } catch (error) {
+    const detail =
+      error instanceof Error ? error.message : "Unable to prepare email sends.";
+    message = `${message} Final standings emails could not be processed: ${detail}`;
+  }
+
   revalidatePath("/");
   revalidatePath("/events");
   revalidatePath(`/events/${parsed.data}`);
   return {
     ok: true,
-    message: "Tournament completed. Unplayed matches were marked cancelled.",
+    message,
   };
+}
+
+export async function retryFinalStandingsEmails(
+  _previous: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const parsed = eventIdSchema.safeParse(formData.get("eventId"));
+  if (!parsed.success) {
+    return { ok: false, message: "Choose a valid event to retry." };
+  }
+
+  const adminUser = await requireWorkspaceAdminAction();
+  if (isActionState(adminUser)) return adminUser;
+
+  const client = createServerClient();
+  if (!client) return unavailable;
+
+  const { data: event, error } = await client
+    .from("events")
+    .select("status")
+    .eq("id", parsed.data)
+    .eq("workspace_id", adminUser.activeWorkspaceId)
+    .single();
+  if (error) return { ok: false, message: error.message };
+  if (event.status !== "completed") {
+    return {
+      ok: false,
+      message: "Final standings emails can only be retried after completion.",
+    };
+  }
+
+  try {
+    const deliveryResult = await deliverFinalStandingsEmails({
+      client,
+      workspaceId: adminUser.activeWorkspaceId,
+      eventId: parsed.data,
+    });
+    revalidatePath(`/events/${parsed.data}`);
+    return {
+      ok: true,
+      message: formatDeliveryResult(deliveryResult),
+    };
+  } catch (retryError) {
+    return {
+      ok: false,
+      message:
+        retryError instanceof Error
+          ? retryError.message
+          : "Unable to retry final standings emails.",
+    };
+  }
 }
 
 export async function saveScore(

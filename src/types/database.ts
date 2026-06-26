@@ -158,6 +158,79 @@ export type Database = {
           },
         ];
       };
+      event_email_deliveries: {
+        Row: {
+          id: string;
+          workspace_id: string;
+          event_id: string;
+          event_player_id: string;
+          recipient_app_user_id: string | null;
+          recipient_email: string;
+          recipient_name: string;
+          kind: "final_standings";
+          status: "pending" | "sent" | "failed";
+          provider: string | null;
+          provider_message_id: string | null;
+          payload_snapshot: Json;
+          error_message: string | null;
+          last_attempt_at: string | null;
+          sent_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          workspace_id: string;
+          event_id: string;
+          event_player_id: string;
+          recipient_app_user_id?: string | null;
+          recipient_email: string;
+          recipient_name?: string;
+          kind?: "final_standings";
+          status?: "pending" | "sent" | "failed";
+          provider?: string | null;
+          provider_message_id?: string | null;
+          payload_snapshot?: Json;
+          error_message?: string | null;
+          last_attempt_at?: string | null;
+          sent_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<
+          Database["public"]["Tables"]["event_email_deliveries"]["Insert"]
+        >;
+        Relationships: [
+          {
+            foreignKeyName: "event_email_deliveries_event_id_fkey";
+            columns: ["event_id"];
+            isOneToOne: false;
+            referencedRelation: "events";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "event_email_deliveries_event_player_id_fkey";
+            columns: ["event_player_id"];
+            isOneToOne: false;
+            referencedRelation: "event_players";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "event_email_deliveries_recipient_app_user_id_fkey";
+            columns: ["recipient_app_user_id"];
+            isOneToOne: false;
+            referencedRelation: "app_users";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "event_email_deliveries_workspace_id_fkey";
+            columns: ["workspace_id"];
+            isOneToOne: false;
+            referencedRelation: "workspaces";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       players: {
         Row: {
           id: string;
